@@ -4,6 +4,12 @@ using System.Net.Sockets;
 using System.Security.Authentication;
 using BankoShare.Core;
 
+if (args.Length == 2 && args[0] == "--release-smoke")
+{
+    await ReleaseSmoke.Run(args[1]);
+    return;
+}
+
 var passed = 0;
 await Test("Protocol round trips and rejects malformed input", () =>
 {
@@ -84,6 +90,7 @@ await Test("Cancellation interrupts an active receive", async () =>
     using var cancel = new CancellationTokenSource(100);
     await ThrowsAsync<OperationCanceledException>(() => receiver.ReceiveAsync(cancel.Token));
 });
+passed += await UpdateTests.Run();
 Console.WriteLine($"{passed} tests passed. No OS input was injected.");
 
 async Task Test(string name, Func<Task> action) { await action(); passed++; Console.WriteLine($"PASS {name}"); }

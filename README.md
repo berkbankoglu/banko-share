@@ -2,6 +2,25 @@
 
 İki Windows bilgisayar arasında klavye ve fare paylaşımı. İlk geliştirme önizlemesi; günlük kullanım için henüz doğrulanmış değildir.
 
+## İndir ve kur
+
+[En güncel sürüm ve kurulum dosyası](https://github.com/berkbankoglu/banko-share/releases/latest)
+
+İki bilgisayarda da **Setup.exe** ile biten dosyayı indirip çalıştırın. .NET ayrıca kurulmaz. Önceki ham ZIP sürümünden geçiyorsanız bir kez bu kurulum gerekir. Sonraki sürümleri uygulama otomatik alır.
+
+## Güncellemeler
+
+- Uygulama açılışta ve açıkken her 10 dakikada herkese açık GitHub Releases kaynağını kontrol eder; hesap veya anahtar gerekmez.
+- Güncelleme panelinde kurulu sürüm, son kontrol, indirme yüzdesi ve kurulum durumu görünür.
+- Yeni paket arka planda indirilir; Velopack paket bütünlüğünü doğrular. İndirme başarısızsa çalışan sürüm korunur ve sonraki kontrolde tekrar denenir.
+- Bağlantı kurulurken, alıcı beklerken veya paylaşım oturumu açıkken kurulum yapılmaz. **Bağlantıyı durdur** sonrasında 15 saniyelik geri sayımla güncelleme uygulanıp uygulama yeniden açılır.
+- **Güncellemeleri otomatik indir ve oturum yokken kur** seçeneği kapatılabilir. **Şimdi kontrol et** ve **Güncelle ve yeniden başlat** elle kullanım içindir.
+- Uygulama kapalıyken arka plan servisi çalışmaz; kontrol sonraki açılışta yapılır.
+- Tercihler `%LocalAppData%/BankoShare.Settings/updates.json` içinde, değiştirilen sürüm klasörünün dışında tutulur.
+- Yayınlar geliştirme önizlemesidir; Windows kod imzalama sertifikası henüz yoktur. HTTPS GitHub kaynağı ve paket hash doğrulaması kullanılır.
+
+Yeni sürüm yayımlama: [docs/RELEASING.md](docs/RELEASING.md).
+
 ## Mevcut kapsam
 
 - C# / .NET 9 / WPF masaüstü arayüzü.
@@ -47,11 +66,11 @@ Alıcı TCP 24819 kullanır. Uygulama güvenlik duvarını değiştirmez. Window
 - Göreli fare hareketi kullanılır; hız/ivme eşleştirmesi ve çoklu DPI davranışı iki cihazda test edilmelidir.
 - Alıcı tüm IPv4 arayüzlerinde dinler; güvenlik duvarı kapsamını özel yerel ağla sınırlayın. Otomatik ağ keşfi yok.
 - Süreç zorla öldürülürse veya sistem çökerse alıcının giriş bırakma kodu çalışamayabilir. Fiziksel klavye/fare erişimini koruyun.
-- İmzalı kurulum paketi veya otomatik güncelleme yok.
+- Kurulum ve otomatik güncelleme vardır; Windows Authenticode imzası henüz yoktur.
 
 ## Doğrulama
 
-Test çalıştırıcısı gerçek loopback TLS bağlantılarıyla kimlik doğrulama, yanlış sertifika/sır reddi, paket doğrulaması, olay sırası, zaman aşımı, iptal ve kopmayı sınar. İşletim sistemine giriş göndermez. İki fiziksel bilgisayarda uçtan uca giriş testi henüz yapılmadı; test planı `docs/TESTING.md` içindedir.
+Test çalıştırıcısı gerçek loopback TLS bağlantılarıyla kimlik doğrulama, yanlış sertifika/sır reddi, paket doğrulaması, olay sırası, zaman aşımı, iptal ve kopmayı sınar. Güncelleme testleri oturum sırasında kurulumu engelleme, bekleme süresi, kullanıcı tercihi, indirme hatası, iptal ve eşzamanlı kontrolü kapsar. İşletim sistemine giriş göndermez. İki fiziksel bilgisayarda uçtan uca giriş testi henüz yapılmadı; test planı `docs/TESTING.md` içindedir.
 
 ## Sonraki adımlar
 

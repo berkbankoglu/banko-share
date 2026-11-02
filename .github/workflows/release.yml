@@ -1,0 +1,44 @@
+name: Publish Windows release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Validate release version
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Expected vMAJOR.MINOR.PATCH tag' }
+          [xml]$project = Get-Content src/BankoShare.App/BankoShare.App.csproj
+          if ($project.Project.PropertyGroup.Version -ne $version) { throw 'Tag and project version differ' }
+          "BANKO_VERSION=$version" >> $env:GITHUB_ENV
+      - run: dotnet tool restore
+      - run: dotnet build BankoShare.sln -c Release
+      - run: dotnet run --project tests/BankoShare.Tests -c Release --no-build
+      - run: dotnet publish src/BankoShare.App -c Release -r win-x64 --self-contained true -p:Version=${{ env.BANKO_VERSION }} -o artifacts/publish
+      - name: Package installer and update feed
+        run: dotnet vpk pack --packId BankoShare --packTitle "Banko Share" --packAuthors berkbankoglu --packVersion ${{ env.BANKO_VERSION }} --packDir artifacts/publish --mainExe BankoShare.App.exe --channel win --runtime win-x64 --outputDir artifacts/releases
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          # Draft stays invisible to installed clients until every asset is uploaded.
+          gh release create $env:GITHUB_REF_NAME --verify-tag --draft --title "Banko Share $env:GITHUB_REF_NAME" --notes-file docs/RELEASE-NOTES.md
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create release' }
+          $assets = Get-ChildItem artifacts/releases -File | Select-Object -ExpandProperty FullName
+          gh release upload $env:GITHUB_REF_NAME @assets
+          if ($LASTEXITCODE -ne 0) { throw 'Asset upload failed; release remains draft' }
+          gh release edit $env:GITHUB_REF_NAME --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish release' }

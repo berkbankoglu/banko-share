@@ -5,6 +5,7 @@ using System.Threading.Channels;
 using System.Windows;
 using BankoShare.Core;
 using Microsoft.Win32;
+using System.Windows.Threading;
 
 namespace BankoShare.App;
 
@@ -19,13 +20,31 @@ public partial class MainWindow : Window
     private Channel<InputEvent>? queue;
     private Task? running;
     private bool closing;
+    private UpdateCoordinator? updater;
+    private readonly CancellationTokenSource updateLifetime = new();
+    private readonly DispatcherTimer updatePoll = new() { Interval = TimeSpan.FromMinutes(10) };
+    private readonly DispatcherTimer updateTick = new() { Interval = TimeSpan.FromSeconds(1) };
+    private bool SessionBusy => session != null || running is { IsCompleted: false };
     public MainWindow()
     {
         InitializeComponent();
+        updater = new UpdateCoordinator(new GithubUpdates()) { Automatic = UpdatePreferences.Load().Automatic };
+        VersionText.Text = $"v{updater.CurrentVersion}";
+        AutoUpdate.IsChecked = updater.Automatic;
+        updater.Changed += RefreshUpdates;
+        updatePoll.Tick += async (_, _) => { if (updater.Automatic) await updater.CheckAsync(updateLifetime.Token); };
+        updateTick.Tick += (_, _) => { updater.Tick(DateTimeOffset.Now, SessionBusy); RefreshUpdates(); };
+        ContentRendered += async (_, _) =>
+        {
+            updatePoll.Start(); updateTick.Start();
+            if (updater.Automatic) await updater.CheckAsync(updateLifetime.Token);
+            else { UpdateStatus.Text = "Otomatik güncelleme kapalı."; }
+        };
         SystemEvents.SessionSwitch += SessionChanged;
         SystemEvents.PowerModeChanged += PowerChanged;
         Closed += (_, _) =>
         {
+            updatePoll.Stop(); updateTick.Stop(); updateLifetime.Cancel();
             SystemEvents.SessionSwitch -= SessionChanged;
             SystemEvents.PowerModeChanged -= PowerChanged;
         };
@@ -36,6 +55,28 @@ public partial class MainWindow : Window
             await running; closing = true; Close();
         };
         Deactivated += (_, _) => { if (capture?.Active == true) ToggleControl(); };
+    }
+    private void RefreshUpdates()
+    {
+        if (updater == null) return;
+        UpdateStatus.Text = !updater.Automatic && updater.Phase == UpdatePhase.Idle ? "Otomatik güncelleme kapalı." : updater.Status;
+        LastCheckText.Text = updater.LastChecked is { } checkedAt ? $"Son kontrol: {checkedAt:dd.MM.yyyy HH:mm}" : "Açılışta ve her 10 dakikada kontrol edilir.";
+        CheckUpdateButton.IsEnabled = updater.Phase is not (UpdatePhase.Checking or UpdatePhase.Downloading or UpdatePhase.Applying or UpdatePhase.Ready);
+        ApplyUpdateButton.IsEnabled = updater.Phase == UpdatePhase.Ready && !SessionBusy;
+        if (updater.Phase == UpdatePhase.Applying) Busy(true);
+        else if (!SessionBusy) Busy(false);
+    }
+    private async void CheckUpdate_Click(object sender, RoutedEventArgs e)
+    { if (updater != null) await updater.CheckAsync(updateLifetime.Token); }
+    private void ApplyUpdate_Click(object sender, RoutedEventArgs e) => updater?.Apply(SessionBusy);
+    private async void AutoUpdate_Changed(object sender, RoutedEventArgs e)
+    {
+        if (updater == null) return;
+        updater.Automatic = AutoUpdate.IsChecked == true;
+        try { new UpdatePreferences(updater.Automatic).Save(); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        { UpdateStatus.Text = "Tercih bu oturumda değişti; diske kaydedilemedi."; }
+        if (IsLoaded && updater.Automatic) await updater.CheckAsync(updateLifetime.Token);
     }
     private void SessionChanged(object sender, SessionSwitchEventArgs e)
     { if (e.Reason is SessionSwitchReason.SessionLock or SessionSwitchReason.SessionLogoff or SessionSwitchReason.RemoteDisconnect) Dispatcher.BeginInvoke(Stop); }

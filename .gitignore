@@ -2,6 +2,7 @@
 **/obj/
 .vs/
 artifacts/
+work/
 *.user
 *.pfx
 *.key

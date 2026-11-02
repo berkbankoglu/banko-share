@@ -11,6 +11,13 @@
   <TextBlock Text="BANKO SHARE" Foreground="#83E3CB" FontWeight="Bold" FontSize="13"/>
   <TextBlock Text="İki bilgisayar. Tek klavye ve fare." FontSize="27" FontWeight="SemiBold" Margin="0,10,0,8"/>
   <TextBlock Text="Windows önizlemesi · Aynı yerel ağ · F12 ile kontrol değiştir" Foreground="#AABBD3"/>
+  <Border Background="#1B293D" CornerRadius="10" Padding="18" Margin="0,18,0,0"><StackPanel>
+   <DockPanel><TextBlock Text="Güncellemeler" FontSize="18" FontWeight="SemiBold"/><TextBlock x:Name="VersionText" HorizontalAlignment="Right" Foreground="#83E3CB"/></DockPanel>
+   <TextBlock x:Name="UpdateStatus" Text="Güncelleme kontrolü bekleniyor." TextWrapping="Wrap" Margin="0,8,0,0"/>
+   <TextBlock x:Name="LastCheckText" Foreground="#AABBD3" FontSize="12" Margin="0,4,0,8"/>
+   <CheckBox x:Name="AutoUpdate" Content="Güncellemeleri otomatik indir ve oturum yokken kur" Foreground="#EAF1FF" Checked="AutoUpdate_Changed" Unchecked="AutoUpdate_Changed"/>
+   <WrapPanel><Button x:Name="CheckUpdateButton" Content="Şimdi kontrol et" Click="CheckUpdate_Click"/><Button x:Name="ApplyUpdateButton" Content="Güncelle ve yeniden başlat" Click="ApplyUpdate_Click" IsEnabled="False"/></WrapPanel>
+  </StackPanel></Border>
   <Border Background="#1B293D" CornerRadius="10" Padding="18" Margin="0,22,0,14"><StackPanel>
    <TextBlock Text="1 / Kontrol edilecek bilgisayar" FontSize="18" FontWeight="SemiBold"/>
    <TextBlock Text="Alıcıyı başlatın. Adresi ve eşleştirme kodunu diğer bilgisayara girin." TextWrapping="Wrap" Margin="0,7,0,0"/>
