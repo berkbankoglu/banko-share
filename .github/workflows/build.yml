@@ -1,0 +1,19 @@
+name: Windows build and protocol tests
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - run: dotnet build BankoShare.sln -c Release
+      - run: dotnet run --project tests/BankoShare.Tests -c Release --no-build
+      - run: dotnet publish src/BankoShare.App -c Release -r win-x64 --self-contained true -o artifacts/win-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: banko-share-windows-x64-preview
+          path: artifacts/win-x64
