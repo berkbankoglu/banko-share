@@ -1,5 +1,15 @@
 # İki cihaz kabul testi
 
+## Güncelleme doğrulaması — 02.11.2026
+
+- 15 otomatik protokol/güncelleme koordinasyonu testi geçti.
+- `v0.2.0` GitHub Actions derleme ve yayın akışları başarılı.
+- `dotnet run --project tests/BankoShare.Tests -c Release -- --release-smoke 0.2.0` başarılı: herkese açık sürüm keşfi, hesapsız indirme ve hash doğrulama, güncel sürümü tekrar sunmama, sürüm düşürmeyi engelleme ve bozuk paket reddi.
+- Yayınlanan uygulamanın bir kopyası test için `0.1.99` paket sürümüyle ayrı bir portable klasöre paketlendi. Uygulamanın GitHub'dan `0.2.0` paketini alıp uyguladığı doğrulandı; `sq.version` dosyası `0.2.0` oldu ve yeniden açılan arayüz **Güncel · v0.2.0** gösterdi.
+- Bu test yerel bir portable paket üzerinde yapıldı; iki fiziksel bilgisayardaki kurulum ve fare/klavye kabul testlerinin yerine geçmez.
+
+## Fare ve klavye kabul testi
+
 Durum: henüz uygulanmadı. Her iki cihazda fiziksel klavye/fare bulunsun. İlk denemeyi boş bir metin düzenleyicide yapın.
 
 | Test | Beklenen |
