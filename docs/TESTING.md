@@ -1,5 +1,13 @@
 # İki cihaz kabul testi
 
+## Arka planda kod doğrulaması — 03.11.2026
+
+- 19 otomatik test geçti; Windows uygulaması sıfır hata ve uyarıyla derlendi.
+- Oturum iptalinden sonra sıradaki ağ girdisinin işletim sistemine uygulanmasına karşı ek kontrol eklendi.
+- Basılı giriş takibi işletim sistemi çağrısından ayrıldı. Testler bütün tuş/düğmeleri bırakmayı, genişletilmiş tuş kodlarını, tuş tekrarını, başarısız bırakmaları yeniden denemeyi ve başarısız tuş basışlarını kaydetmemeyi doğruluyor.
+- Testler sahte giriş alıcısı ve loopback bağlantı kullanır. Masaüstü uygulaması açılmadı; global giriş yakalama veya gerçek giriş gönderme çalıştırılmadı.
+- Bu değişiklikler kaynak kodda hazırdır. Kullanıcı çalışırken otomatik yeniden başlatmayı tetiklememek için yeni sürüm etiketi/yayın oluşturulmadı; indirilebilir sürüm hâlâ `v0.2.0`.
+
 ## Güncelleme doğrulaması — 02.11.2026
 
 - 15 otomatik protokol/güncelleme koordinasyonu testi geçti.

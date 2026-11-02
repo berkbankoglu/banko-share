@@ -25,12 +25,11 @@ internal static class Native
 
 internal sealed class InputInjector
 {
-    private readonly HashSet<(int Scan, int Extended)> keys = [];
-    private readonly HashSet<int> buttons = [];
-    public void Apply(InputEvent input)
+    private readonly InputState state = new(SendNative);
+    public void Apply(InputEvent input) => state.Apply(input);
+    public void ReleaseAll() => state.ReleaseAll();
+    private static void SendNative(InputEvent input)
     {
-        if (input.Kind == EventKind.ReleaseAll) { ReleaseAll(); return; }
-        if (input.Kind == EventKind.Heartbeat) return;
         var native = new Native.Input();
         switch (input.Kind)
         {
@@ -47,19 +46,6 @@ internal sealed class InputInjector
         }
         if (Native.SendInput(1, [native], Marshal.SizeOf<Native.Input>()) != 1)
             throw new Win32Exception(Marshal.GetLastWin32Error(), "Giriş uygulanamadı. Hedef uygulamanın yetki düzeyini kontrol edin.");
-        if (input.Kind == EventKind.Key)
-        { if (input.B == 1) keys.Add((input.A, input.C)); else keys.Remove((input.A, input.C)); }
-        if (input.Kind == EventKind.Button)
-        { if (input.B == 1) buttons.Add(input.A); else buttons.Remove(input.A); }
-    }
-    public void ReleaseAll()
-    {
-        Exception? failure = null;
-        foreach (var key in keys.ToArray())
-            try { Apply(new(EventKind.Key, key.Scan, 0, key.Extended)); } catch (Exception e) { failure = e; }
-        foreach (var button in buttons.ToArray())
-            try { Apply(new(EventKind.Button, button, 0)); } catch (Exception e) { failure = e; }
-        if (failure != null) throw failure;
     }
 }
 

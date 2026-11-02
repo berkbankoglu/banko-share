@@ -115,6 +115,8 @@ public partial class MainWindow : Window
             while (!token.IsCancellationRequested)
             {
                 var input = await connection!.ReceiveAsync(token);
+                // A queued continuation may run after Stop was clicked or F12 ended the session.
+                token.ThrowIfCancellationRequested();
                 injector.Apply(input);
                 await connection.SendAsync(new(EventKind.Heartbeat), token);
             }

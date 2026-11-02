@@ -91,6 +91,7 @@ await Test("Cancellation interrupts an active receive", async () =>
     await ThrowsAsync<OperationCanceledException>(() => receiver.ReceiveAsync(cancel.Token));
 });
 passed += await UpdateTests.Run();
+passed += InputStateTests.Run();
 Console.WriteLine($"{passed} tests passed. No OS input was injected.");
 
 async Task Test(string name, Func<Task> action) { await action(); passed++; Console.WriteLine($"PASS {name}"); }
