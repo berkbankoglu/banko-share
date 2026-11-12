@@ -27,12 +27,18 @@ Eşleştirme kalıcıdır. Sonraki açılışlarda iki uygulama birbirini bulup 
 - **Geçiş:** İmleç, düzende komşu monitör olan kenardan geçer; aynı yoldan geri döner. Klavye imleçle birlikte gider.
 - **Panik tuşu:** Esc'e hızlıca iki kez basmak imleci ve klavyeyi bu bilgisayara geri getirir.
 - **Geri alma:** Kontrol edilen bilgisayarın kendi faresini oynatmak veya tıklamak kontrolü ona verir.
-- **Güvenli durumlar:** Fare düğmesi basılıyken geçiş yapılmaz. Bağlantı koparsa, ekran kilitlenirse veya bilgisayar uykuya geçerse imleç eve döner ve karşı tarafta basılı tuşlar bırakılır.
+- **Güvenli durumlar:** Fare düğmesi basılıyken (bu bilgisayarda ya da diğerinde, ör. pencere sürüklerken) geçiş yapılmaz. Bağlantı koparsa, ekran kilitlenirse veya bilgisayar uykuya geçerse imleç eve döner ve karşı tarafta basılı tuşlar bırakılır.
 - **Arka planda çalışma:** Pencereyi kapatmak uygulamayı kapatmaz; Banko Share bildirim alanında (saatin yanında) paylaşmaya devam eder.
   - Simgeye tıklayınca pencere açılır.
   - Sağ tık menüsünde kenardan geçiş, bu bilgisayara dönme, Windows ile başlatma ve **Çıkış** vardır.
   - Kurulu sürüm Windows açılınca bildirim alanında başlar. Bu, **Uygulama** sayfasından kapatılabilir.
-- **Oyun modu:** Riot Vanguard korumalı bir oyun (VALORANT, League of Legends) açıkken Banko Share o bilgisayarda kenara çekilir. Oyun kapanınca kendiliğinden devam eder. Bu sürede:
+- **Pano ve dosyalar:** Kopyaladığınız şey imleçle birlikte diğer bilgisayara geçer; orada Ctrl+V ile yapıştırılır. İmleç geri gelince orada kopyalanan da buraya gelir.
+  - Metin, HTML, RTF ve resim desteklenir.
+  - Dosya ve klasörler Gezgin'de kopyalanıp diğer bilgisayarda yapıştırılır; bir seferde en fazla 8 GB ve 50.000 öğe.
+  - Gelen dosyalar yapıştırılana kadar `%LocalAppData%\BankoShare.Settings\Alınan dosyalar` içinde bekler; üç günden eskiler silinir.
+  - Uygulama açılmadan önce kopyalanmış içerik paylaşılmaz; gelen içerik geldiği bilgisayara geri gönderilmez.
+- **Başka paylaşım programı:** ShareMouse, Synergy, Barrier, Input Leap, Deskflow veya Mouse Without Borders açıkken Banko Share kendini duraklatır ve nedenini yazar. İki program aynı fareyi yönetirse sürükleme ve tıklamalarda imleç donar. Diğer program kapanınca Banko Share kendiliğinden devam eder.
+- **Oyun modu:** Riot Vanguard korumalı bir oyun (VALORANT, League of Legends) açıkken Banko Share o bilgisayarda kenara çekilir; yalnızca Riot istemcisinin açık olması yetmez. Oyun kapanınca kendiliğinden devam eder. Bu sürede:
   - fare ve klavye kancaları kaldırılır,
   - hiçbir giriş gönderilmez,
   - diğer bilgisayar oraya geçemez,
@@ -60,7 +66,10 @@ Eşleştirme kalıcıdır. Sonraki açılışlarda iki uygulama birbirini bulup 
 - Ağda bulma UDP 24820 yayınıyla yapılır. Bu yalnızca adres ipucudur; güven her zaman sabitlenmiş sertifikadan gelir. Bağlantılar TCP 24819 üzerindendir.
 - Her bağlantıda 0,5 sn'de bir kalp atışı gider; 3 sn sessizlik bağlantıyı kapatır. Kopan bağlantılar artan bekleme süreleriyle yeniden kurulur.
 - Hesap, bulut sunucusu, telemetri veya tuş kaydı yoktur. Sürücü kurulmaz; her şey kullanıcı düzeyinde çalışır.
-- Başka programların süreçleri açılmaz. Program adları Windows'un süreç listesinden okunur; Riot oyunu Vanguard'ın `vgc` hizmetinin durumuna bakılarak anlaşılır. Hile önleme sürücüleri, başka programların oyun süreçlerini açmasını izler.
+- Başka programların süreçleri açılmaz. Program, oyun ve diğer paylaşım programlarının adları Windows'un süreç listesinden okunur. Hile önleme sürücüleri, başka programların oyun süreçlerini açmasını izler.
+- Pano içeriği ve dosyalar, giriş bağlantısından ayrı, aynı sabitlenmiş sertifikalarla kurulan ikinci bir TLS bağlantısıyla aktarılır. Alıcı önce başlığı denetler: her yol göreli olmalı, alınan klasörün dışına çıkamaz (`..`, sürücü adı, ayrılmış aygıt adları reddedilir), boyut ve öğe sayısı sınırlıdır ve diskte yer olmalıdır. Yarım kalan aktarımın klasörü silinir.
+- Fare kancası bekçisi: imleç hareket ettiği hâlde kancaya 1,5 saniye olay gelmezse kancalar yeniden kurulur. İmleç diğer bilgisayarda değilken görünür kalmış gizleme penceresi kapatılır.
+- Tanılama kaydı `%LocalAppData%\BankoShare.Settings\logs\banko-share.log` dosyasına yazılır (2 MB'ta döner); tuşlar ve pano içeriği yazılmaz.
 - Windows ile başlatma, kullanıcıya ait `HKCU\…\Run` kaydıyla yapılır ve yalnızca Setup ile kurulan sürüm için açılır.
 - Ayarlar `%LocalAppData%\BankoShare.Settings` içinde tutulur: eşleşen cihazlar, düzen, tercihler ve açık sertifika. Dosyalar arka planda, geçici dosya üzerinden atomik olarak yazılır. Virüs tarayıcısı dosyayı kısa süre tutarsa yazma yeniden denenir. Fare kancası diske hiç beklemez.
 
@@ -89,7 +98,7 @@ Testler gerçek loopback TLS bağlantılarıyla eşleştirme, yanlış kod ve se
 ## Sınırlar
 
 - Yönetici olarak çalışan pencereler, UAC, kilit ekranı ve Ctrl+Alt+Del normal kullanıcı uygulamasına kapalıdır.
-- Pano, dosya aktarımı ve hız ayarları henüz yok (bkz. [yol haritası](docs/PLAN.md)).
+- Dosyaları kenarın ötesine sürükle-bırak, kaydırma ve fare hızı ayarları, klavye düzeni eşitleme henüz yok (bkz. [yol haritası](docs/PLAN.md)). Dosyalar kopyala-yapıştır ile aktarılır.
 - Tam ekran ve program koşulları yalnızca kontrol eden bilgisayardaki ön pencereye bakar; kontrol edilen bilgisayardaki tam ekran uygulama geçişi engellemez.
 - Fare takılı olmayan bir bilgisayarda Windows imleci çizmeyebilir; imleç çizme Aşama 3'te.
 - Başlangıçta iki bilgisayarda aynı klavye düzenini kullanın.

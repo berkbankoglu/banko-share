@@ -28,6 +28,13 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        // A background app that shares the mouse must not vanish over one unexpected UI error: log it and carry on.
+        DispatcherUnhandledException += (_, args) =>
+        {
+            BankoShare.Core.Diag.Write($"Beklenmeyen arayüz hatası: {args.Exception}");
+            args.Handled = true;
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, args) => BankoShare.Core.Diag.Write($"Ölümcül hata: {args.ExceptionObject}");
         var window = new MainWindow();
         MainWindow = window;
         if (!StartInTray) window.Show();

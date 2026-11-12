@@ -89,6 +89,8 @@ internal sealed class ShareHost : IDisposable
         var testPort = int.TryParse(Environment.GetEnvironmentVariable("BANKOSHARE_TEST_PORT"), out var p) && p is > 1024 and < 65536 ? p : 0;
         var directory = testPort != 0 ? Path.Combine(Path.GetTempPath(), "BankoShare.Test-" + testPort) : SettingsDirectory;
         var store = new SettingsStore(directory);
+        Diag.Start(Path.Combine(directory, "logs"));
+        Diag.Write($"Banko Share {version} başlıyor · {Environment.OSVersion.VersionString}");
         DeviceIdentity identity; string? warning = null;
         try { identity = testPort != 0 ? DeviceIdentity.CreateEphemeral() : IdentityStore.LoadOrCreate(directory); }
         catch (Exception e) when (e is CryptographicException or IOException or UnauthorizedAccessException)

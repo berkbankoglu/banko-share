@@ -14,7 +14,7 @@ public interface IInputPlatform
     void MaskMenuKey();
 }
 
-public sealed record PeerStatus(string Id, string Name, bool Connected, string? Address, DeviceInfo? Device, bool Paused = false);
+public sealed record PeerStatus(string Id, string Name, bool Connected, string? Address, DeviceInfo? Device, bool Paused = false, string? Version = null);
 /// <summary>Paused: this machine has stepped aside for an anti-cheat-protected game.</summary>
 public sealed record ShareSnapshot(DeviceInfo Local, IReadOnlyList<PeerStatus> Peers, IReadOnlyList<DiscoveredDevice> Discovered,
     ScreenLayout Layout, string? ControllingName, string? ControlledByName, SwitchOptions Options, PairingOffer? Pairing, bool Paused = false);
@@ -51,10 +51,18 @@ public sealed class ShareController : IDisposable
     private bool stateChanged, onInputThread, paused;
     /// <summary>Peers that said they take no input right now (a protected game runs there).</summary>
     private readonly HashSet<string> pausedPeers = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> peerVersions = new(StringComparer.Ordinal);
+    /// <summary>Machines the pointer just went to from here; raised outside the lock.</summary>
+    private readonly List<string> handoffs = [];
+    private long lastSlowInputLog;
     private string? pendingNotice;
 
     public event Action? Changed;
     public event Action<string>? Notice;
+    /// <summary>The pointer moved from this machine to the given peer (we entered it, or it took the pointer back from us).</summary>
+    public event Action<string>? PointerHandedOff;
+    /// <summary>A peer sent the tail of its diagnostic log: peer id, text.</summary>
+    public event Action<string, string>? PeerLogReceived;
 
     public ShareController(DeviceInfo local, PeerNetwork network, IInputPlatform platform, SettingsStore? store, string version,
         ISwitchEnvironment? environment = null)
@@ -153,6 +161,20 @@ public sealed class ShareController : IDisposable
 
     public bool Paused { get { lock (gate) return paused; } }
 
+    /// <summary>The peer our pointer is on, if any.</summary>
+    public string? ControllingPeer { get { lock (gate) return engine.ActivePeer; } }
+
+    public string? PeerVersion(string id) { lock (gate) return peerVersions.GetValueOrDefault(id); }
+
+    /// <summary>Asks every connected 0.5+ peer for the tail of its diagnostic log (see <see cref="PeerLogReceived"/>).</summary>
+    public int RequestPeerLogs()
+    {
+        string[] ids;
+        lock (gate) ids = [.. peerVersions.Where(v => Versions.AtLeast(v.Value, 0, 5)).Select(v => v.Key)];
+        foreach (var id in ids) network.Send(id, Frame.Empty(FrameType.LogRequest));
+        return ids.Length;
+    }
+
     /// <summary>
     /// Steps aside completely, e.g. while an anti-cheat-protected game runs here: the pointer comes home, a peer
     /// controlling us is sent back, incoming control is refused and peers are told not to switch here. The app
@@ -245,7 +267,7 @@ public sealed class ShareController : IDisposable
         {
             var online = engine.Peers.ToDictionary(p => p.Id, StringComparer.Ordinal);
             var peers = network.Directory.All.Select(r => new PeerStatus(r.Id, online.GetValueOrDefault(r.Id)?.Name ?? r.Name,
-                network.IsConnected(r.Id), r.Address, online.GetValueOrDefault(r.Id) ?? r.LastKnownDevice, pausedPeers.Contains(r.Id))).ToList();
+                network.IsConnected(r.Id), r.Address, online.GetValueOrDefault(r.Id) ?? r.LastKnownDevice, pausedPeers.Contains(r.Id), peerVersions.GetValueOrDefault(r.Id))).ToList();
             var discovered = network.Discovered.Where(d => !network.Directory.IsPaired(d.Id)).ToList();
             string? NameOf(string? id) => id == null ? null : peers.FirstOrDefault(p => p.Id == id)?.Name ?? "Diğer bilgisayar";
             return new(engine.Local, peers, discovered, layout.Clone(), NameOf(engine.ActivePeer), NameOf(controlledBy), engine.Options, network.CurrentPairing, paused);
@@ -266,6 +288,7 @@ public sealed class ShareController : IDisposable
         lock (gate)
         {
             pausedPeers.Remove(link.PeerId);
+            peerVersions.Remove(link.PeerId);
             engine.RemovePeer(link.PeerId, fx);
             if (controlledBy == link.PeerId) { controlledBy = null; ReleaseInjected(); }
             Flush();
@@ -297,6 +320,9 @@ public sealed class ShareController : IDisposable
                 lock (gate)
                 {
                     // A paused peer stays connected and on the layout but is no switching target until it says otherwise.
+                    if (peerVersions.GetValueOrDefault(id) != hello.Version || pausedPeers.Contains(id) != hello.Paused)
+                        Diag.Write($"Merhaba: {hello.Device.Name} v{hello.Version}{(hello.Paused ? ", oyun modunda" : "")}, {hello.Device.Monitors.Length} monitör");
+                    peerVersions[id] = hello.Version;
                     if (hello.Paused) { pausedPeers.Add(id); engine.RemovePeer(id, fx); }
                     else { pausedPeers.Remove(id); engine.SetPeer(hello.Device, fx); }
                     if (layout.PlaceMissing(KnownDevices()))
@@ -331,11 +357,12 @@ public sealed class ShareController : IDisposable
                 lock (gate)
                 {
                     // Paused (a protected game runs here): send the pointer straight back, inject nothing.
-                    if (paused) { network.Send(id, Frame.Empty(FrameType.Reclaim)); return; }
+                    if (paused) { Diag.Write("Giriş reddedildi: oyun modunda"); network.Send(id, Frame.Empty(FrameType.Reclaim)); return; }
                     // Whoever moved last owns the pointer: being entered ends our own remote session.
                     engine.ForceLocal(fx);
                     if (controlledBy != null && controlledBy != id) ReleaseInjected();
                     controlledBy = id; reclaimTravel = 0; stateChanged = true;
+                    Diag.Write($"Kontrol geldi: {NameOfPeer(id)}");
                     lastActivity = DateTimeOffset.UtcNow;
                     TryInject(new InputEvent(EventKind.Move, p.X, p.Y));
                     Flush();
@@ -355,13 +382,29 @@ public sealed class ShareController : IDisposable
                 break;
             }
             case FrameType.Leave:
-                lock (gate) { if (controlledBy == id) { controlledBy = null; ReleaseInjected(); stateChanged = true; } }
+                lock (gate)
+                {
+                    if (controlledBy != id) return;
+                    controlledBy = null; ReleaseInjected(); stateChanged = true;
+                    // The pointer went back to the controller: what was copied here should follow it.
+                    handoffs.Add(id);
+                    Diag.Write($"Kontrol bitti: {NameOfPeer(id)}");
+                }
                 break;
             case FrameType.Reclaim:
-                lock (gate) { if (engine.ActivePeer == id) { engine.ForceLocal(fx); Flush(); } }
+                lock (gate) { if (engine.ActivePeer == id) { Diag.Write($"Geri alındı: {NameOfPeer(id)} kendi faresini kullandı"); engine.ForceLocal(fx); Flush(); } }
                 break;
             // Late pairing traffic carries no meaning once the link is up.
-            case FrameType.LegacyPairRequest or FrameType.PairAccepted or FrameType.PairStart or FrameType.PairReply or FrameType.PairFinish:
+            case FrameType.LogRequest:
+            {
+                var tail = System.Text.Encoding.UTF8.GetBytes(Diag.Tail(15 * 1024));
+                link.TrySend(new Frame(FrameType.LogResponse, tail.Length > 0 ? tail : "(boş)"u8.ToArray()));
+                break;
+            }
+            case FrameType.LogResponse:
+                PeerLogReceived?.Invoke(id, System.Text.Encoding.UTF8.GetString(frame.Payload));
+                break;
+            case FrameType.LegacyPairRequest or FrameType.PairAccepted or FrameType.PairStart or FrameType.PairReply or FrameType.PairFinish or FrameType.TransferStart:
                 break;
         }
     }
@@ -372,6 +415,7 @@ public sealed class ShareController : IDisposable
     {
         var peer = controlledBy!;
         controlledBy = null; stateChanged = true;
+        Diag.Write($"Kontrol geri alındı: bu bilgisayarın faresi kullanıldı ({NameOfPeer(peer)} durduruldu)");
         ReleaseInjected();
         network.Send(peer, Frame.Empty(FrameType.Reclaim));
     }
@@ -379,9 +423,17 @@ public sealed class ShareController : IDisposable
     /// <summary>Queues input for this machine; it is applied in order on the worker, never under the lock.</summary>
     private void TryInject(InputEvent input) => worker.Post(() =>
     {
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
         try { injected.Apply(input); }
         catch (Exception) when (input.Kind == EventKind.Move) { /* e.g. secure desktop; next move retries. */ }
         catch (Exception) { Notice?.Invoke("Giriş uygulanamadı. Yönetici olarak çalışan pencereler bu sürümde desteklenmez."); }
+        // SendInput waits for every low-level hook in the session; a slow one (ours or another program's) shows here.
+        var ms = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        if (ms > 40 && Environment.TickCount64 - Interlocked.Read(ref lastSlowInputLog) > 1000)
+        {
+            Interlocked.Exchange(ref lastSlowInputLog, Environment.TickCount64);
+            Diag.Write($"Yavaş giriş: {input.Kind} {ms:F0} ms sürdü (bir fare/klavye kancası yavaş yanıt veriyor olabilir)");
+        }
     });
 
     private void ReleaseInjected() => worker.Post(() =>
@@ -466,9 +518,13 @@ public sealed class ShareController : IDisposable
                 case EngineEffect.WarpLocal w: Os(() => platform.WarpCursor(w.Point)); break;
                 case EngineEffect.HideLocalCursor h: Os(() => platform.SetCursorHidden(h.Hidden, h.Anchor)); break;
                 case EngineEffect.Enter e:
+                    handoffs.Add(e.Peer);
+                    Diag.Write($"Geçiş: {NameOfPeer(e.Peer)} ({e.Position.X},{e.Position.Y})");
                     network.Send(e.Peer, Frame.Enter(e.Position)); stateChanged = true; lastActivity = DateTimeOffset.UtcNow; break;
                 case EngineEffect.Move m: network.Send(m.Peer, Frame.Input(new(EventKind.Move, m.Position.X, m.Position.Y))); break;
-                case EngineEffect.Leave l: network.Send(l.Peer, Frame.Empty(FrameType.Leave)); stateChanged = true; lastActivity = DateTimeOffset.UtcNow; break;
+                case EngineEffect.Leave l:
+                    Diag.Write($"Dönüş: {NameOfPeer(l.Peer)}");
+                    network.Send(l.Peer, Frame.Empty(FrameType.Leave)); stateChanged = true; lastActivity = DateTimeOffset.UtcNow; break;
                 case EngineEffect.Forward f: network.Send(f.Peer, Frame.Input(f.Input)); break;
                 case EngineEffect.Command c: RunCommand(c); break;
                 case EngineEffect.MaskMenu: Os(platform.MaskMenuKey); break;
@@ -481,13 +537,21 @@ public sealed class ShareController : IDisposable
     /// <summary>Raises events outside the lock: Changed only when sharing state changed (not on every mouse move).</summary>
     private void AfterHook()
     {
-        bool raise; string? notice;
-        lock (gate) { raise = stateChanged; stateChanged = false; notice = pendingNotice; pendingNotice = null; }
+        bool raise; string? notice; string[] handedOff;
+        lock (gate)
+        {
+            raise = stateChanged; stateChanged = false; notice = pendingNotice; pendingNotice = null;
+            handedOff = handoffs.Count == 0 ? [] : [.. handoffs];
+            handoffs.Clear();
+        }
         if (notice != null) Notice?.Invoke(notice);
+        foreach (var peer in handedOff) PointerHandedOff?.Invoke(peer);
         if (raise) RaiseChanged();
     }
 
     private void RaiseChanged() => Changed?.Invoke();
+
+    private string NameOfPeer(string id) => network.Directory.Get(id)?.Name ?? id[..8];
 
     private List<DeviceInfo> KnownDevices()
     {

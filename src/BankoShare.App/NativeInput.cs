@@ -40,6 +40,7 @@ internal static class Native
     [DllImport("user32.dll")] internal static extern nint DefWindowProc(nint hwnd, uint message, nint w, nint l);
     [DllImport("user32.dll")] internal static extern bool DestroyWindow(nint hwnd);
     [DllImport("user32.dll")] internal static extern bool ShowWindowAsync(nint hwnd, int command);
+    [DllImport("user32.dll")] internal static extern bool IsWindowVisible(nint hwnd);
     [DllImport("user32.dll")] internal static extern bool SetWindowPos(nint hwnd, nint after, int x, int y, int w, int h, uint flags);
     [DllImport("user32.dll")] internal static extern bool SetLayeredWindowAttributes(nint hwnd, uint key, byte alpha, uint flags);
     [DllImport("user32.dll")] internal static extern nint SetCursor(nint cursor);
@@ -206,14 +207,21 @@ internal sealed class InputHost : IDisposable
     private Native.WndProc? hiderProc;
     private Exception? startError;
     private uint threadId;
+    private readonly WindowsPlatform platform;
+    private readonly Timer watchdog;
+    private const uint WmReinstallHooks = 0x8001; // WM_APP + 1, posted to the input thread
+    private long lastHookEvent = Environment.TickCount64, lastReinstall;
+    private Native.Point lastCursor;
 
     public InputHost(ShareController controller, WindowsPlatform platform)
     {
-        this.controller = controller;
+        this.controller = controller; this.platform = platform;
         thread = new Thread(() => Run(platform)) { IsBackground = true, Name = "Banko Share input", Priority = ThreadPriority.Highest };
         thread.Start();
         ready.Wait();
         if (startError != null) throw startError;
+        Diag.Write("Fare ve klavye kancaları kuruldu");
+        watchdog = new Timer(_ => Watch(), null, 1000, 1000);
     }
 
     private void Run(WindowsPlatform platform)
@@ -233,7 +241,21 @@ internal sealed class InputHost : IDisposable
         catch (Exception e) { startError = e; }
         ready.Set();
         if (startError == null)
-            while (Native.GetMessage(out var msg, 0, 0, 0) > 0) { Native.TranslateMessage(ref msg); Native.DispatchMessage(ref msg); }
+            while (Native.GetMessage(out var msg, 0, 0, 0) > 0)
+            {
+                if (msg.Hwnd == 0 && msg.Message == WmReinstallHooks)
+                {
+                    // Windows removes a low-level hook it once had to time out, without telling us. Put both back.
+                    if (mouseHook != 0) Native.UnhookWindowsHookEx(mouseHook);
+                    if (keyHook != 0) Native.UnhookWindowsHookEx(keyHook);
+                    var module = Native.GetModuleHandle(null);
+                    mouseHook = Native.SetWindowsHookEx(14, mouseProc!, module, 0);
+                    keyHook = Native.SetWindowsHookEx(13, keyProc!, module, 0);
+                    Diag.Write(mouseHook != 0 && keyHook != 0 ? "Kancalar yeniden kuruldu" : "Kancalar yeniden kurulamadı");
+                    continue;
+                }
+                Native.TranslateMessage(ref msg); Native.DispatchMessage(ref msg);
+            }
         if (mouseHook != 0) Native.UnhookWindowsHookEx(mouseHook);
         if (keyHook != 0) Native.UnhookWindowsHookEx(keyHook);
         platform.HiderWindow = 0;
@@ -260,8 +282,34 @@ internal sealed class InputHost : IDisposable
         return hwnd;
     }
 
+    /// <summary>
+    /// Once a second, off the input thread: if the cursor moved but no mouse event reached our hook for a while,
+    /// the hook is gone (Windows drops hooks that time out) and is reinstalled. A cursor-hiding window left visible
+    /// while the pointer is here is hidden, so the cursor can never stay invisible.
+    /// </summary>
+    private void Watch()
+    {
+        if (!Native.GetCursorPos(out var cursor)) return;
+        var moved = cursor.X != lastCursor.X || cursor.Y != lastCursor.Y;
+        lastCursor = cursor;
+        var now = Environment.TickCount64;
+        if (moved && now - Interlocked.Read(ref lastHookEvent) > 1500 && now - lastReinstall > 10_000 && threadId != 0)
+        {
+            lastReinstall = now;
+            Diag.Write("İmleç hareket ediyor ama fare kancasına olay gelmiyor; kancalar yeniden kuruluyor");
+            Native.PostThreadMessage(threadId, WmReinstallHooks, 0, 0);
+        }
+        var hider = platform.HiderWindow;
+        if (hider != 0 && Native.IsWindowVisible(hider) && controller.ControllingPeer == null)
+        {
+            Diag.Write("Görünür kalmış imleç gizleme penceresi kapatıldı");
+            Native.ShowWindowAsync(hider, 0);
+        }
+    }
+
     private nint OnMouse(int code, nint message, nint data)
     {
+        Interlocked.Exchange(ref lastHookEvent, Environment.TickCount64);
         if (code >= 0)
         {
             try
@@ -316,6 +364,7 @@ internal sealed class InputHost : IDisposable
 
     public void Dispose()
     {
+        watchdog.Dispose();
         if (threadId != 0) Native.PostThreadMessage(threadId, 0x0012, 0, 0);
         thread.Join(TimeSpan.FromSeconds(2));
         ready.Dispose();

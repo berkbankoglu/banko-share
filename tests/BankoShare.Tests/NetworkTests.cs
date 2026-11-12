@@ -298,7 +298,9 @@ internal static class NetworkTests
             var a = Node.Create("A").WithController(Fixtures.Bankoarts);
             var b = Node.Create("B").WithController(Fixtures.Desktop);
             await a.Network.PairAsync(b.Endpoint, b.Network.OpenPairing().Code, Timeout());
-            await T.Eventually(() => a.Controller.Snapshot().Peers.Any(p => p.Connected && p.Device != null)
+            // PeerVersion is set together with the switch engine's peer entry; the device alone can come from the saved list first.
+            await T.Eventually(() => a.Controller.PeerVersion(b.Id) != null && b.Controller.PeerVersion(a.Id) != null
+                && a.Controller.Snapshot().Peers.Any(p => p.Connected && p.Device != null)
                 && b.Controller.Snapshot().Peers.Any(p => p.Connected && p.Device != null), "controllers see each other");
             return new ControllerPair { A = a, B = b };
         }

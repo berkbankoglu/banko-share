@@ -80,6 +80,10 @@ public sealed record SwitchOptions
     /// peers not to switch here. On by default; input tools must stay out of anti-cheat-protected games.
     /// </summary>
     public bool PauseForProtectedGames { get; init; } = true;
+    /// <summary>Text and images copied here follow the pointer to the other machine, and are accepted from it.</summary>
+    public bool ShareClipboard { get; init; } = true;
+    /// <summary>Copied files and folders follow the pointer too (sent over a separate connection).</summary>
+    public bool ShareFiles { get; init; } = true;
 
     /// <summary>Settings come from disk and the UI: drop anything out of range rather than fail.</summary>
     public SwitchOptions Sanitized() => this with

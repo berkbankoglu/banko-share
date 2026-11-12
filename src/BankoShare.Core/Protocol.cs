@@ -43,8 +43,16 @@ public readonly record struct InputEvent(EventKind Kind, int A = 0, int B = 0, i
     }
 }
 
-/// <summary>LegacyPairRequest is the 0.3 pairing request; it is refused.</summary>
-public enum FrameType : byte { Heartbeat, Hello, Layout, Enter, Input, Leave, Reclaim, LegacyPairRequest, PairAccepted, PairStart, PairReply, PairFinish }
+/// <summary>
+/// LegacyPairRequest is the 0.3 pairing request; it is refused. TransferStart opens a separate connection for a
+/// clipboard hand-off; LogRequest/LogResponse fetch a peer's diagnostic log. Peers before 0.5 do not know the
+/// last three and drop a link that carries them, so they are only sent to 0.5 or later.
+/// </summary>
+public enum FrameType : byte
+{
+    Heartbeat, Hello, Layout, Enter, Input, Leave, Reclaim, LegacyPairRequest, PairAccepted, PairStart, PairReply, PairFinish,
+    TransferStart, LogRequest, LogResponse
+}
 
 /// <summary>
 /// Port is the sender's listening port; an inbound connection only reveals an ephemeral one. Paused means the
@@ -55,6 +63,15 @@ public sealed record HelloMessage(DeviceInfo Device, string Version, int Port, b
 public sealed record PairStartMessage(string Element, string Name);
 public sealed record PairReplyMessage(string Element, string Confirmation);
 public sealed record PairFinishMessage(string Confirmation);
+/// <summary>First frame of a transfer connection. Kind is "clipboard" for now.</summary>
+public sealed record TransferStartMessage(string Kind);
+
+public static class Versions
+{
+    /// <summary>"0.5.0+sha" → true when at least <paramref name="major"/>.<paramref name="minor"/>; unknown → false.</summary>
+    public static bool AtLeast(string? version, int major, int minor) =>
+        Version.TryParse((version ?? "").Split('+', '-')[0], out var v) && (v.Major, v.Minor).CompareTo((major, minor)) >= 0;
+}
 
 /// <summary>
 /// Wire frame: version byte, type byte, little-endian payload length, payload.
@@ -119,10 +136,10 @@ public readonly record struct Frame(FrameType Type, byte[] Payload)
 
     private static bool LengthAllowed(FrameType type, int length) => type switch
     {
-        FrameType.Heartbeat or FrameType.Leave or FrameType.Reclaim or FrameType.PairAccepted => length == 0,
+        FrameType.Heartbeat or FrameType.Leave or FrameType.Reclaim or FrameType.PairAccepted or FrameType.LogRequest => length == 0,
         FrameType.Enter or FrameType.Input => length == InputEvent.Size,
-        FrameType.Hello or FrameType.Layout => length is > 0 and <= MaxPayload,
-        FrameType.PairStart or FrameType.PairReply or FrameType.PairFinish => length is > 0 and <= 1024,
+        FrameType.Hello or FrameType.Layout or FrameType.LogResponse => length is > 0 and <= MaxPayload,
+        FrameType.PairStart or FrameType.PairReply or FrameType.PairFinish or FrameType.TransferStart => length is > 0 and <= 1024,
         _ => false
     };
 }

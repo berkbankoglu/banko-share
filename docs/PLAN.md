@@ -76,8 +76,8 @@ Hepsi varsayılan olarak kapalıdır; açılmadıkça 0.3.0 davranışı değiş
 
 ## Aşama 4 — Veri alışverişi
 
-- Pano eşitleme (önce metin, sonra görsel); uzak panoyu kısayolla yapıştırma.
-- Bilgisayarlar arası dosya sürükle-bırak.
+- ~~Pano eşitleme (metin, görsel)~~: 0.5.0'da yapıldı. Pano imleci izler; metin, HTML, RTF, resim ve dosyalar desteklenir.
+- Bilgisayarlar arası dosya aktarımı: 0.5.0'da kopyala-yapıştırla yapıldı. Kenarın ötesine sürükle-bırak hâlâ açık.
 - Klavye dil düzenini eşitleme.
 - Uzak olayları eşitleme: kapatma, uyku, kilit, ekran koruyucu, oturum açma.
 

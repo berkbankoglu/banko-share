@@ -54,6 +54,18 @@ internal static class SwitchEngineTests
             engine.OnMouseMove(Anchor + new PointI(0, 1085), Anchor, false, fx);
             T.Check(fx.Contains(new E.WarpLocal(new(320, 5))) && engine.ActivePeer == null, "Return: " + string.Join(", ", fx));
         });
+        s.Test("While a button is held on the peer (dragging a window) the pointer stays there", () =>
+        {
+            var (engine, fx) = Setup();
+            engine.OnMouseMove(new(1000, -6), new(1000, 0), false, fx);
+            engine.OnButton(1, true, fx); fx.Clear();
+            engine.OnMouseMove(Anchor + new PointI(0, 40), Anchor, false, fx);
+            T.Check(engine.ActivePeer == Fixtures.RemoteId && fx.SequenceEqual<E>([new E.Move(Fixtures.RemoteId, new(680, 1079))]),
+                "Crossed while dragging: " + string.Join(", ", fx)); fx.Clear();
+            engine.OnButton(1, false, fx); fx.Clear();
+            engine.OnMouseMove(Anchor + new PointI(0, 10), Anchor, false, fx);
+            T.Check(engine.ActivePeer == null && fx.Contains(new E.WarpLocal(new(1000, 9))), "No return after release: " + string.Join(", ", fx));
+        });
         s.Test("No switch while a local button is held or switching is disabled", () =>
         {
             var (engine, fx) = Setup();

@@ -343,9 +343,26 @@
      <TextBlock Style="{StaticResource Note}" FontSize="12" Text="Çıkınca paylaşım durur; diğer bilgisayar bu bilgisayara geçemez."/>
     </StackPanel></Border>
     <Border Style="{StaticResource Card}"><StackPanel>
+     <TextBlock Text="Pano ve dosyalar" Style="{StaticResource Heading}"/>
+     <TextBlock Style="{StaticResource Note}" Text="Kopyaladığınız şey imleçle birlikte diğer bilgisayara geçer; orada Ctrl+V ile yapıştırırsınız. İmleç geri gelince orada kopyaladığınız şey de buraya gelir."/>
+     <CheckBox x:Name="ClipboardBox" Content="Panoyu paylaş (metin, biçimli metin, resim)" Margin="0,14,0,0" Checked="Option_Changed" Unchecked="Option_Changed"/>
+     <CheckBox x:Name="FilesBox" Content="Kopyalanan dosya ve klasörleri de aktar" Margin="0,12,0,0" Checked="Option_Changed" Unchecked="Option_Changed"/>
+     <TextBlock Style="{StaticResource Note}" Margin="28,4,0,0" Text="Dosyalar ayrı, şifreli bir bağlantıyla gider; büyük dosyalar fareyi yavaşlatmaz. Bir seferde en fazla 8 GB ve 50.000 öğe aktarılır. Büyük aktarımlarda bitince bildirim çıkar."/>
+     <Button Content="Alınan dosyalar klasörü" Style="{StaticResource Secondary}" Click="OpenReceived_Click" HorizontalAlignment="Left" Margin="0,14,0,0"/>
+     <TextBlock Style="{StaticResource Note}" FontSize="12" Text="Gelen dosyalar yapıştırılana kadar burada bekler; üç günden eskiler silinir."/>
+    </StackPanel></Border>
+    <Border Style="{StaticResource Card}"><StackPanel>
+     <TextBlock Text="Tanılama" Style="{StaticResource Heading}"/>
+     <TextBlock Style="{StaticResource Note}" Text="Banko Share bağlantıları, geçişleri, duraklatmaları ve yavaş girişleri bir kayıt dosyasına yazar; yazdığınız tuşları ve kopyaladığınız içeriği yazmaz. Bir sorun olduğunda diğer bilgisayarın kaydını da buraya alabilirsiniz."/>
+     <WrapPanel Margin="0,4,0,0">
+      <Button Content="Kayıt klasörünü aç" Style="{StaticResource Secondary}" Click="OpenLogs_Click"/>
+      <Button Content="Diğer bilgisayarların kaydını al" Style="{StaticResource Secondary}" Click="FetchLogs_Click"/>
+     </WrapPanel>
+    </StackPanel></Border>
+    <Border Style="{StaticResource Card}"><StackPanel>
      <TextBlock Text="Oyunlar ve hile önleme" Style="{StaticResource Heading}"/>
      <CheckBox x:Name="GamesBox" Content="Riot oyunu açıkken bu bilgisayarda paylaşımı duraklat (önerilir)" Margin="0,12,0,0" Checked="Option_Changed" Unchecked="Option_Changed"/>
-     <TextBlock Style="{StaticResource Note}" Margin="28,4,0,0" Text="VALORANT veya League of Legends açıkken (Riot Vanguard'ın oyun hizmeti çalışırken) Banko Share bu bilgisayarda fare ve klavye kancalarını kaldırır, hiçbir giriş göndermez ve diğer bilgisayara buraya geçmemesini bildirir. Oyunun sürecine hiç dokunmaz. Oyun kapanınca kendiliğinden devam eder."/>
+     <TextBlock Style="{StaticResource Note}" Margin="28,4,0,0" Text="VALORANT ya da League of Legends oyunu açıkken Banko Share bu bilgisayarda fare ve klavye kancalarını kaldırır, hiçbir giriş göndermez ve diğer bilgisayara buraya geçmemesini bildirir. Oyunun sürecine hiç dokunmaz. Yalnızca Riot istemcisinin açık olması yetmez; oyun kapanınca Banko Share kendiliğinden devam eder."/>
      <TextBlock x:Name="GameStateText" Style="{StaticResource Note}" Margin="28,6,0,0" Foreground="{StaticResource Green}"/>
     </StackPanel></Border>
     <Border Style="{StaticResource Card}"><StackPanel>

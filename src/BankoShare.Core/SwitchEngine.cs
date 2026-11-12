@@ -56,6 +56,8 @@ public sealed class SwitchEngine(DeviceInfo local, ScreenLayout layout)
     private readonly HashSet<(int Scan, int Extended)> localKeys = [];
     private readonly HashSet<int> heldVks = [];
     private readonly HashSet<int> swallowed = [];
+    /// <summary>Mouse buttons held down on the peer; no switching until they are released (e.g. a window drag).</summary>
+    private readonly HashSet<int> remoteButtons = [];
     private PointI exitPoint;
     private PointI? lastLocal;
     private Push? push;
@@ -121,6 +123,7 @@ public sealed class SwitchEngine(DeviceInfo local, ScreenLayout layout)
     public HookResult OnButton(int button, bool down, List<EngineEffect> fx)
     {
         if (ActivePeer == null) return HookResult.Pass;
+        if (down) remoteButtons.Add(button); else remoteButtons.Remove(button);
         fx.Add(new EngineEffect.Forward(ActivePeer, new(EventKind.Button, button, down ? 1 : 0)));
         return HookResult.Block;
     }
@@ -219,6 +222,7 @@ public sealed class SwitchEngine(DeviceInfo local, ScreenLayout layout)
         ActivePeer = peerId;
         RemotePosition = position;
         escapeArmed = escapeHeld = false;
+        remoteButtons.Clear();
         ResetPush();
         // Keys released where our hook could not see it (secure desktop) must not count as held while remote.
         if (Environment is { } env) heldVks.RemoveWhere(vk => !env.IsKeyDown(vk));
@@ -231,6 +235,7 @@ public sealed class SwitchEngine(DeviceInfo local, ScreenLayout layout)
     {
         fx.Add(new EngineEffect.Leave(ActivePeer!));
         ActivePeer = peerId; RemotePosition = position;
+        remoteButtons.Clear(); // the old peer releases them on Leave
         ResetPush();
         fx.Add(new EngineEffect.Enter(peerId, position));
     }
@@ -241,7 +246,8 @@ public sealed class SwitchEngine(DeviceInfo local, ScreenLayout layout)
         var next = RemotePosition + delta;
         if (peer.MonitorAt(next) != null) { Retreat(peer.Id, next); SetRemote(next, fx); return; }
         var from = peer.MonitorAt(RemotePosition) ?? peer.NearestMonitor(RemotePosition);
-        if (FindCrossing(peer, from, next) is { } hit && MayCross(peer, from, hit, timeMs, fx))
+        // Same rule as on this machine: while a button is held there (dragging a window), the pointer stays there.
+        if (remoteButtons.Count == 0 && FindCrossing(peer, from, next) is { } hit && MayCross(peer, from, hit, timeMs, fx))
         {
             if (hit.Device.Id == Local.Id) ReturnLocal(hit.Point, fx, sendLeave: true);
             else if (hit.Device.Id == peer.Id) { ResetPush(); SetRemote(hit.Point, fx); }
@@ -262,6 +268,7 @@ public sealed class SwitchEngine(DeviceInfo local, ScreenLayout layout)
     {
         var peer = ActivePeer!;
         ActivePeer = null;
+        remoteButtons.Clear();
         ResetPush();
         if (sendLeave) fx.Add(new EngineEffect.Leave(peer));
         var home = Local.MonitorAt(point) != null ? point : Local.NearestMonitor(point).Clamp(point);

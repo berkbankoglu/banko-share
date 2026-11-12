@@ -136,6 +136,30 @@ public sealed class PeerNetwork : IDisposable
         return peerId;
     }
 
+    /// <summary>
+    /// Handles an incoming transfer connection from a paired device. The stream is disposed when the task ends.
+    /// Runs on a thread-pool thread; nothing here touches the input link.
+    /// </summary>
+    public Func<string, Stream, CancellationToken, Task>? TransferHandler { get; set; }
+
+    /// <summary>
+    /// Opens a separate TLS connection to a paired device, pinned to its certificate, for bulk data such as a
+    /// clipboard hand-off. The input link is not involved, so a large file never delays the pointer.
+    /// </summary>
+    public async Task<T> TransferAsync<T>(string peerId, Func<Stream, CancellationToken, Task<T>> body, CancellationToken token)
+    {
+        if (Directory.Get(peerId)?.Address is not { } address || !IPEndPoint.TryParse(address, out var endpoint))
+            throw new IOException("Diğer bilgisayarın adresi bilinmiyor.");
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, life.Token);
+        var (client, ssl, _) = await PeerLink.ConnectAsync(endpoint, self, id => id == peerId, linked.Token);
+        using (client)
+        using (ssl)
+        {
+            await Frame.WriteAsync(ssl, Frame.Of(FrameType.TransferStart, new TransferStartMessage("clipboard")), linked.Token);
+            return await body(ssl, linked.Token);
+        }
+    }
+
     public void Unpair(string id)
     {
         Directory.Remove(id);
@@ -165,8 +189,16 @@ public sealed class PeerNetwork : IDisposable
             {
                 using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
                 deadline.CancelAfter(PeerLink.HandshakeTimeout);
-                // Every connection opens with one frame: the start of pairing, or normal traffic from a paired device.
+                // Every connection opens with one frame: the start of pairing, a transfer, or normal traffic from a paired device.
                 var first = await Frame.ReadAsync(ssl, deadline.Token);
+                if (first.Type == FrameType.TransferStart)
+                {
+                    if (!Directory.IsPaired(peerId) || TransferHandler is not { } handler) throw new AuthenticationException("Aktarım reddedildi.");
+                    first.As<TransferStartMessage>();
+                    try { await handler(peerId, ssl, token); }
+                    finally { ssl.Dispose(); client.Dispose(); }
+                    return;
+                }
                 if (first.Type == FrameType.PairStart) await AnswerPairing(ssl, peerId, first.As<PairStartMessage>(), deadline.Token);
                 else if (!Directory.IsPaired(peerId)) throw new AuthenticationException("Eşleşmemiş cihaz.");
                 Register(new PeerLink(client, ssl, peerId, initiator: false), first.Type is FrameType.Heartbeat or FrameType.PairStart ? null : first);
@@ -268,10 +300,13 @@ public sealed class PeerNetwork : IDisposable
             }
             links[link.PeerId] = link;
         }
+        Diag.Write($"Bağlantı kuruldu: {NameOf(link.PeerId)} ({(link.Initiator ? "giden" : "gelen")}, {link.Address})");
         link.Start((l, f) => FrameReceived?.Invoke(l, f), OnClosed, initial, l => LinkUp?.Invoke(l));
         replaced?.Close();
         Changed?.Invoke();
     }
+
+    private string NameOf(string id) => Directory.Get(id)?.Name ?? id[..8];
 
     private bool Preferred(PeerLink link) =>
         string.CompareOrdinal(link.Initiator ? self.Id : link.PeerId, link.Initiator ? link.PeerId : self.Id) < 0;
@@ -281,6 +316,7 @@ public sealed class PeerNetwork : IDisposable
         bool current;
         lock (gate) { current = links.TryGetValue(link.PeerId, out var c) && c == link; if (current) links.Remove(link.PeerId); }
         if (!current) return;
+        Diag.Write($"Bağlantı kapandı: {NameOf(link.PeerId)}");
         LinkDown?.Invoke(link);
         Changed?.Invoke();
     }

@@ -30,6 +30,10 @@ public partial class MainWindow : Window
     private readonly GithubUpdates updates = new();
     private readonly UpdateCoordinator updater;
     private readonly TrayIcon tray;
+    private readonly ClipboardSync? clipboard;
+    /// <summary>Why this machine is paused right now (a game or another sharing program), or null.</summary>
+    private string? pauseReason, pauseTrayText;
+    private string? announcedOtherApp;
     private readonly SettingsStore appStore;
     private readonly CancellationTokenSource lifetime = new();
     private readonly DispatcherTimer updatePoll = new() { Interval = TimeSpan.FromMinutes(10) };
@@ -74,7 +78,11 @@ public partial class MainWindow : Window
             host.Controller.Notice += message => Dispatcher.BeginInvoke(() => ShowNotice(message));
             host.Network.Paired += _ => Dispatcher.BeginInvoke(() => { ShowNotice("Yeni cihaz eşleştirildi."); NavLayout.IsChecked = true; });
             Editor.DeviceDropped += OnDeviceDropped;
-            host.Games.Changed += _ => Dispatcher.BeginInvoke(ApplyGameMode);
+            host.Games.Changed += () => Dispatcher.BeginInvoke(ApplyGameMode);
+            host.Controller.PeerLogReceived += (id, text) => Dispatcher.BeginInvoke(() => SavePeerLog(id, text));
+            clipboard = new ClipboardSync(host, this);
+            clipboard.Status += ShowNotice;
+            clipboard.Announce += (title, text) => { if (!host.Suspended) tray.ShowNotice(title, text); };
             if (host.Warning != null) { WarningText.Text = host.Warning; WarningText.Visibility = Visibility.Visible; }
         }
         // A second launch (Start menu, desktop shortcut) brings this window back instead of starting another copy.
@@ -165,6 +173,7 @@ public partial class MainWindow : Window
         SystemEvents.PowerModeChanged -= PowerChanged;
         SystemEvents.DisplaySettingsChanged -= DisplayChanged;
         tray.Dispose();
+        clipboard?.Dispose();
         host?.Dispose();
     }
 
@@ -192,18 +201,62 @@ public partial class MainWindow : Window
 
     private void Exit_Click(object sender, RoutedEventArgs e) => ExitApplication();
 
-    /// <summary>Steps aside while a Riot Vanguard–protected game runs here, and comes back when it closes.</summary>
+    /// <summary>
+    /// Steps aside while a Riot Vanguard–protected game runs here or another sharing program (ShareMouse…) is open:
+    /// two programs hooking the same mouse fight over every drag and freeze the pointer. Comes back on its own.
+    /// </summary>
     private void ApplyGameMode()
     {
         if (host == null || disposed) return;
         var game = host.Games.Active;
+        var other = host.Games.OtherSharingApp;
         GameStateText.Text = game ? "Şu an bir Riot oyunu açık." : "";
-        var pause = game && host.Controller.Options.PauseForProtectedGames;
+        (pauseReason, pauseTrayText) = other != null
+            ? ($"{other} açık · iki paylaşım programı aynı fareyi yönetirse imleç donar; Banko Share duraklatıldı, {other}'ı kapatın", $"Banko Share · {other} açık, duraklatıldı")
+            : game && host.Controller.Options.PauseForProtectedGames
+                ? ("Oyun modu · Riot oyunu açık; bu bilgisayarda fare ve klavye paylaşımı duraklatıldı", "Banko Share · oyun modu (Riot oyunu açık)")
+                : (null, null);
+        var pause = pauseReason != null;
+        if (other != null && other != announcedOtherApp && !game)
+            tray.ShowNotice($"{other} açık", $"Banko Share, {other} ile aynı anda çalışamaz ve duraklatıldı. Banko Share'i kullanmak için {other}'ı kapatın; Banko Share kendiliğinden devam eder.");
+        announcedOtherApp = other;
         if (pause == host.Suspended) return;
         try { host.SetSuspended(pause); }
         catch (Exception e) when (e is Win32Exception or InvalidOperationException) { ShowNotice("Fare kancası yeniden kurulamadı: " + e.Message); return; }
-        ShowNotice(pause ? "Riot oyunu açık: Banko Share bu bilgisayarda duraklatıldı." : "Oyun kapandı: paylaşım yeniden açık.");
+        ShowNotice(pause ? (other != null ? $"{other} açık: Banko Share duraklatıldı." : "Riot oyunu açık: Banko Share bu bilgisayarda duraklatıldı.") : "Banko Share yeniden etkin.");
         Refresh();
+    }
+
+    private void SavePeerLog(string id, string text)
+    {
+        var name = host?.Network.Directory.Get(id)?.Name ?? id[..8];
+        try
+        {
+            var folder = System.IO.Path.GetDirectoryName(Diag.FilePath) ?? System.IO.Path.Combine(ShareHost.SettingsDirectory, "logs");
+            var safe = new string([.. name.Select(ch => ClipboardContent.IsSafeName(ch.ToString()) ? ch : '_')]);
+            File.WriteAllText(System.IO.Path.Combine(folder, $"karşı-{safe}.log"), text);
+            ShowNotice($"{name} bilgisayarının kaydı alındı.");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { ShowNotice("Kayıt yazılamadı: " + e.Message); }
+    }
+
+    private void OpenReceived_Click(object sender, RoutedEventArgs e)
+    {
+        if (clipboard == null) return;
+        Directory.CreateDirectory(clipboard.ReceivedFolder);
+        Process.Start(new ProcessStartInfo("explorer.exe", $"\"{clipboard.ReceivedFolder}\"") { UseShellExecute = true });
+    }
+
+    private void OpenLogs_Click(object sender, RoutedEventArgs e)
+    {
+        if (System.IO.Path.GetDirectoryName(Diag.FilePath) is not { } folder) return;
+        Process.Start(new ProcessStartInfo("explorer.exe", $"\"{folder}\"") { UseShellExecute = true });
+    }
+
+    private void FetchLogs_Click(object sender, RoutedEventArgs e)
+    {
+        var asked = host?.Controller.RequestPeerLogs() ?? 0;
+        ShowNotice(asked == 0 ? "Kayıt istenecek bağlı bir bilgisayar yok (diğer bilgisayarda 0.5 veya üstü olmalı)." : "Diğer bilgisayarların kayıtları isteniyor…");
     }
 
     // ---- Refresh ----
@@ -243,7 +296,7 @@ public partial class MainWindow : Window
         var connected = s.Peers.Count(p => p.Connected);
         (StatusText.Text, StatusDot.Fill) = s switch
         {
-            { Paused: true } => ("Oyun modu · Riot oyunu açık; bu bilgisayarda fare ve klavye paylaşımı duraklatıldı", Idle),
+            { Paused: true } => (pauseReason ?? "Banko Share bu bilgisayarda duraklatıldı", Warning),
             { ControllingName: { } name } => ($"Fare ve klavye şu an {name} bilgisayarında · geri dönmek için Esc Esc", Sharing),
             { ControlledByName: { } name } => ($"{name} bu bilgisayarı kontrol ediyor · fareyi oynatarak geri alın", Sharing),
             { Options.SwitchingEnabled: false } => ("Ekran kenarından geçiş kapalı", Idle),
@@ -254,7 +307,7 @@ public partial class MainWindow : Window
         var trayState = s.Paused ? TrayState.Idle : s.ControllingName != null || s.ControlledByName != null ? TrayState.Sharing : connected > 0 ? TrayState.Connected : TrayState.Idle;
         var trayText = s switch
         {
-            { Paused: true } => "Banko Share · oyun modu (Riot oyunu açık)",
+            { Paused: true } => pauseTrayText ?? "Banko Share · duraklatıldı",
             { ControllingName: { } name } => $"Banko Share · fare {name} bilgisayarında",
             { ControlledByName: { } name } => $"Banko Share · {name} kontrol ediyor",
             _ when connected > 0 => $"Banko Share · {string.Join(", ", s.Peers.Where(p => p.Connected).Select(p => p.Name))} bağlı",
@@ -265,7 +318,7 @@ public partial class MainWindow : Window
 
     private void RefreshPeers(ShareSnapshot s)
     {
-        var signature = string.Join("|", s.Peers.Select(p => $"{p.Id}:{p.Name}:{p.Connected}:{p.Paused}:{p.Address}"));
+        var signature = string.Join("|", s.Peers.Select(p => $"{p.Id}:{p.Name}:{p.Connected}:{p.Paused}:{p.Version}:{p.Address}"));
         if (signature == peersSignature) return;
         peersSignature = signature;
         PeersPanel.Children.Clear();
@@ -284,7 +337,7 @@ public partial class MainWindow : Window
             row.Children.Add(new Ellipse { Width = 9, Height = 9, Fill = p.Connected ? Connected : Idle, Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center });
             var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             text.Children.Add(new TextBlock { Text = p.Name, FontWeight = FontWeights.SemiBold });
-            text.Children.Add(new TextBlock { Text = (p.Connected ? p.Paused ? "Bağlı · oyun modunda, geçiş duraklatıldı" : "Bağlı" : "Bağlı değil") + (p.Address != null ? " · " + p.Address : ""), Foreground = Muted, FontSize = 12 });
+            text.Children.Add(new TextBlock { Text = (p.Connected ? p.Paused ? "Bağlı · şu an duraklatıldı (oyun veya başka paylaşım programı)" : "Bağlı" : "Bağlı değil") + (p.Version != null ? " · v" + p.Version.Split('+')[0] : "") + (p.Version != null && !Versions.AtLeast(p.Version, 0, 5) ? " · eski sürüm, güncellenmeli" : "") + (p.Address != null ? " · " + p.Address : ""), Foreground = Muted, FontSize = 12 });
             row.Children.Add(text);
             PeersPanel.Children.Add(row);
         }
@@ -419,6 +472,9 @@ public partial class MainWindow : Window
         MaximizedBox.IsChecked = o.BlockMaximized;
         CornersBox.IsChecked = o.BlockCorners;
         GamesBox.IsChecked = o.PauseForProtectedGames;
+        ClipboardBox.IsChecked = o.ShareClipboard;
+        FilesBox.IsChecked = o.ShareFiles;
+        FilesBox.IsEnabled = o.ShareClipboard;
         (o.RequiredKey switch { SwitchKey.Shift => KeyShift, SwitchKey.Ctrl => KeyCtrl, SwitchKey.Alt => KeyAlt, _ => KeyNone }).IsChecked = true;
         (o.DoubleTap switch { DoubleTapMode.OverrideBlocks => TapOverride, DoubleTapMode.Always => TapAlways, _ => TapOff }).IsChecked = true;
         (o.JumpMods switch { KeyMods.Ctrl | KeyMods.Alt => JumpCtrlAlt, KeyMods.Ctrl | KeyMods.Shift => JumpCtrlShift, _ => JumpOff }).IsChecked = true;
@@ -442,6 +498,8 @@ public partial class MainWindow : Window
             : sender == MaximizedBox ? o with { BlockMaximized = On(MaximizedBox) }
             : sender == CornersBox ? o with { BlockCorners = On(CornersBox) }
             : sender == GamesBox ? o with { PauseForProtectedGames = On(GamesBox) }
+            : sender == ClipboardBox ? o with { ShareClipboard = On(ClipboardBox) }
+            : sender == FilesBox ? o with { ShareFiles = On(FilesBox) }
             : sender == KeyNone ? o with { RequiredKey = SwitchKey.None }
             : sender == KeyShift ? o with { RequiredKey = SwitchKey.Shift }
             : sender == KeyCtrl ? o with { RequiredKey = SwitchKey.Ctrl }

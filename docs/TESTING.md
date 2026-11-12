@@ -1,5 +1,54 @@
 # Doğrulama kayıtları ve kabul testleri
 
+## Pano ve dosya aktarımı, donma önlemleri — 13.11.2026, v0.5.0
+
+**Bildirim:**
+
+- DESKTOP'taki Banko Share penceresi uzaktan tutulup sürüklenince donma sürüyordu.
+- Kopyalanan şey diğer bilgisayara yapıştırılamıyordu.
+
+**BANKOARTS'ta bulunanlar:**
+
+- Banko Share çalışmıyordu; ShareMouse açıktı (00:32'den beri).
+- AutoHotkey ve Razer yazılımları da çalışıyordu; bunlar da fare ve klavye kancası kurabilir.
+- Banko Share'e ait çökme kaydı yok. Kayıtlardaki çökmeler yalnızca geliştirme sırasında bilerek başarısız edilen test çalıştırmaları.
+- Değerlendirme: Banko Share ile ShareMouse aynı anda açıkken ikisi de aynı fareyi yakalıyor; ShareMouse basılı tutarak sürüklemeyi kendi dosya sürükle-bırak özelliği için izliyor. Donmanın en güçlü açıklaması bu. DESKTOP'un sürümü ve DESKTOP'ta ShareMouse'un açık olup olmadığı buradan görülemedi.
+
+**Önlemler:**
+
+- Başka paylaşım programı açıkken Banko Share kendini duraklatır ve nedenini yazar.
+- Diğer bilgisayarda düğme basılıyken kenardan geçiş yapılmaz.
+- Fare kancası bekçisi: Windows'un sessizce kaldırdığı kancalar yeniden kurulur; takılı kalan imleç gizleme penceresi kapatılır.
+- Tanılama kaydı tutulur. Yavaş SendInput (40 ms'den uzun, yani bir kanca yavaş yanıt veriyor) kayda düşer. Diğer bilgisayarın kaydı buradan istenebilir.
+- Diğer bilgisayarın sürümü cihaz listesinde görünür.
+
+**Otomatik testler:** 63 test, son çalıştırmalarda 3/3 ve 8/8 geçti. Yeni testler:
+
+- **Sürükleme:** Diğer bilgisayarda düğme basılıyken imleç kenarda kalır; bırakılınca geçer.
+- **Pano aktarımı (loopback TLS, ayrı bağlantı):**
+  - Gönderilenler: Türkçe karakterli metin, HTML, RTF, resim; içinde boş alt klasör ve 3 MB'lık dosya bulunan bir klasör; tek bir dosya.
+  - Hepsi birebir ulaştı ve ilerleme toplama vardı.
+- **Ret:** Alıcı reddedince hiçbir veri gitmez. Eşleşmemiş bir sertifika aktarım bağlantısı açamaz.
+- **Kötü yollar** hiçbir şey yazılmadan reddedilir: `../`, `Proje/../../`, sürücü adı, `CON`, `a:b`, kök dışı ad, boş bölüm. Aynı adlı kökler, sınır aşan resim de reddedilir.
+- **Toplayıcı:** Farklı klasörlerdeki aynı adlı dosyalar "rapor (2).txt" olarak ayrılır. Öğe sayısı ve boyut sınırları uygulanır; olmayan öğe reddedilir.
+- **Pano imleci izler:** Geçişte kontrol eden bilgisayar, dönüşte kontrol edilen bilgisayar aktarımı başlatır.
+- **Tanılama:** Diğer bilgisayarın kaydı bağlantı üzerinden alınır. Sürüm karşılaştırması doğru çalışır.
+- **Test düzeltmesi:** "Crossing" testi bir kez aralıklı başarısız oldu. Neden test ortamıydı: cihaz kaydedilen listeden, motor eşi tanımadan önce görünebiliyordu. Ortam artık motorun eşi tanımasını bekliyor.
+
+**Gerçek Windows panosu (BANKOARTS):** Uygulamanın pano okuma ve yazma kodu gerçek panoda denendi; panoda kullanıcı içeriği yoktu ve test sonunda temizlendi. 12 kontrolün hepsi geçti:
+
+- Yapıştırmaya hazır dosya ve klasör listesi; "kopyala" işareti var.
+- Dosya paylaşımı kapalıyken dosya listesi alınmıyor.
+- Türkçe karakterli metin, HTML ve RTF birebir korunuyor.
+- Alfası sıfır bir ekran görüntüsü opak (Bgr24) olarak kodlanıyor ve 64×48 boyutunda geri okunuyor.
+
+**Gerçek uygulama:**
+
+- ShareMouse açıkken başlatılan test kopyası kendini duraklattı: fare kancaları kurulmadı, durum satırında "ShareMouse açık · … duraklatıldı" yazdı.
+- Riot istemcisi açıktı (oyun yoktu). Bu yüzden oyun modu artık yalnızca oyun süreci (VALORANT, League of Legends) için devreye giriyor.
+
+**Henüz denenmedi:** İki gerçek bilgisayar arasında pano ve dosya aktarımı (DESKTOP'un 0.5.0'a güncellenmesi gerekiyor).
+
 ## BANKOARTS çökmesi ve oyun modu — 12.11.2026, v0.4.2
 
 **Olay:**
