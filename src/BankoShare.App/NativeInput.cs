@@ -7,111 +7,248 @@ namespace BankoShare.App;
 internal static class Native
 {
     internal delegate nint HookProc(int code, nint message, nint data);
+    internal delegate nint WndProc(nint hwnd, uint message, nint w, nint l);
+    internal delegate bool MonitorEnumProc(nint monitor, nint hdc, ref Rect rect, nint data);
     [StructLayout(LayoutKind.Sequential)] internal struct Point { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] internal struct Rect { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] internal struct MouseHook { public Point Point; public uint Data, Flags, Time; public nuint Extra; }
     [StructLayout(LayoutKind.Sequential)] internal struct KeyHook { public uint Vk, Scan, Flags, Time; public nuint Extra; }
     [StructLayout(LayoutKind.Sequential)] internal struct MouseInput { public int X, Y; public uint Data, Flags, Time; public nuint Extra; }
     [StructLayout(LayoutKind.Sequential)] internal struct KeyInput { public ushort Vk, Scan; public uint Flags, Time; public nuint Extra; }
-    [StructLayout(LayoutKind.Explicit)] internal struct Union
-    { [FieldOffset(0)] public MouseInput Mouse; [FieldOffset(0)] public KeyInput Key; }
+    [StructLayout(LayoutKind.Explicit)] internal struct Union { [FieldOffset(0)] public MouseInput Mouse; [FieldOffset(0)] public KeyInput Key; }
     [StructLayout(LayoutKind.Sequential)] internal struct Input { public uint Type; public Union Value; }
+    [StructLayout(LayoutKind.Sequential)] internal struct Msg { public nint Hwnd; public uint Message; public nint W, L; public uint Time; public Point Pt; }
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    internal struct WndClassEx { public uint Size, Style; public WndProc Proc; public int ClassExtra, WindowExtra; public nint Instance, Icon, Cursor, Background; public string? Menu; public string ClassName; public nint SmallIcon; }
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    internal struct MonitorInfoEx { public uint Size; public Rect Monitor, Work; public uint Flags; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string Device; }
+
     [DllImport("user32.dll", SetLastError = true)] internal static extern nint SetWindowsHookEx(int id, HookProc callback, nint module, uint thread);
     [DllImport("user32.dll")] internal static extern bool UnhookWindowsHookEx(nint hook);
     [DllImport("user32.dll")] internal static extern nint CallNextHookEx(nint hook, int code, nint message, nint data);
     [DllImport("user32.dll")] internal static extern bool GetCursorPos(out Point point);
+    [DllImport("user32.dll")] internal static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll", SetLastError = true)] internal static extern uint SendInput(uint count, Input[] input, int size);
+    [DllImport("user32.dll")] internal static extern short GetAsyncKeyState(int vk);
+    [DllImport("user32.dll")] internal static extern int GetMessage(out Msg msg, nint hwnd, uint min, uint max);
+    [DllImport("user32.dll")] internal static extern bool TranslateMessage(ref Msg msg);
+    [DllImport("user32.dll")] internal static extern nint DispatchMessage(ref Msg msg);
+    [DllImport("user32.dll")] internal static extern bool PostThreadMessage(uint thread, uint message, nint w, nint l);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] internal static extern ushort RegisterClassEx(ref WndClassEx cls);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    internal static extern nint CreateWindowEx(uint exStyle, string className, string name, uint style, int x, int y, int w, int h, nint parent, nint menu, nint instance, nint param);
+    [DllImport("user32.dll")] internal static extern nint DefWindowProc(nint hwnd, uint message, nint w, nint l);
+    [DllImport("user32.dll")] internal static extern bool DestroyWindow(nint hwnd);
+    [DllImport("user32.dll")] internal static extern bool ShowWindowAsync(nint hwnd, int command);
+    [DllImport("user32.dll")] internal static extern bool SetWindowPos(nint hwnd, nint after, int x, int y, int w, int h, uint flags);
+    [DllImport("user32.dll")] internal static extern bool SetLayeredWindowAttributes(nint hwnd, uint key, byte alpha, uint flags);
+    [DllImport("user32.dll")] internal static extern nint SetCursor(nint cursor);
+    [DllImport("user32.dll")] internal static extern bool EnumDisplayMonitors(nint hdc, nint clip, MonitorEnumProc callback, nint data);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern bool GetMonitorInfo(nint monitor, ref MonitorInfoEx info);
+    [DllImport("shcore.dll")] internal static extern int GetDpiForMonitor(nint monitor, int type, out uint dpiX, out uint dpiY);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] internal static extern nint GetModuleHandle(string? name);
+    [DllImport("kernel32.dll")] internal static extern uint GetCurrentThreadId();
 }
 
-internal sealed class InputInjector
+internal static class Monitors
 {
-    private readonly InputState state = new(SendNative);
-    public void Apply(InputEvent input) => state.Apply(input);
-    public void ReleaseAll() => state.ReleaseAll();
-    private static void SendNative(InputEvent input)
+    /// <summary>Monitor bounds in physical pixels (the process is per-monitor DPI aware), left to right.</summary>
+    public static MonitorInfo[] Get()
+    {
+        List<MonitorInfo> list = [];
+        Native.EnumDisplayMonitors(0, 0, (nint handle, nint _, ref Native.Rect _, nint _) =>
+        {
+            var info = new Native.MonitorInfoEx { Size = (uint)Marshal.SizeOf<Native.MonitorInfoEx>() };
+            if (!Native.GetMonitorInfo(handle, ref info)) return true;
+            var dpi = Native.GetDpiForMonitor(handle, 0, out var x, out _) == 0 ? (int)x : 96;
+            var r = info.Monitor;
+            var m = new MonitorInfo(new(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top), (info.Flags & 1) != 0, Math.Clamp(dpi, 48, 960));
+            // Skip anything a peer would reject (e.g. a zero-sized virtual display).
+            if (m.Bounds.Width is >= 64 and <= 16384 && m.Bounds.Height is >= 64 and <= 16384 && list.Count < DeviceInfo.MaxMonitors) list.Add(m);
+            return true;
+        }, 0);
+        if (list.Count == 0) throw new InvalidOperationException("Monitör bulunamadı.");
+        if (!list.Any(m => m.Primary)) list[0] = list[0] with { Primary = true };
+        return [.. list.OrderBy(m => m.Bounds.Left).ThenBy(m => m.Bounds.Top)];
+    }
+}
+
+/// <summary>SendInput, SetCursorPos and the cursor-hiding window. Safe to call from any thread.</summary>
+internal sealed class WindowsPlatform(MonitorInfo[] monitors) : IInputPlatform
+{
+    private const uint MouseMove = 0x0001, MouseAbsolute = 0x8000, MouseVirtualDesk = 0x4000;
+    private RectI screen = RectI.Union(monitors.Select(m => m.Bounds));
+    public nint HiderWindow { get; set; }
+
+    public void UpdateScreen(MonitorInfo[] current) => screen = RectI.Union(current.Select(m => m.Bounds));
+
+    public void WarpCursor(PointI point) => Native.SetCursorPos(point.X, point.Y);
+
+    public void SetCursorHidden(bool hidden, PointI anchor)
+    {
+        if (HiderWindow == 0) return;
+        if (hidden) Native.SetWindowPos(HiderWindow, -1, anchor.X - 32, anchor.Y - 32, 64, 64, 0x0010 | 0x0040 | 0x4000);
+        else Native.ShowWindowAsync(HiderWindow, 0);
+    }
+
+    public void Inject(InputEvent input)
     {
         var native = new Native.Input();
         switch (input.Kind)
         {
             case EventKind.Move:
-                native.Value.Mouse = new() { X = input.A, Y = input.B, Flags = 1 }; break;
+                var s = screen;
+                native.Value.Mouse = new() { X = Normalize(input.A - s.Left, s.Width), Y = Normalize(input.B - s.Top, s.Height), Flags = MouseMove | MouseAbsolute | MouseVirtualDesk };
+                break;
             case EventKind.Wheel:
-                native.Value.Mouse = new() { Data = unchecked((uint)input.A), Flags = input.B == 0 ? 0x800u : 0x1000u }; break;
+                native.Value.Mouse = new() { Data = unchecked((uint)input.A), Flags = input.B == 0 ? 0x800u : 0x1000u };
+                break;
             case EventKind.Button:
-                uint flag = input.A switch { 1 => 2u, 2 => 8u, 3 => 32u, _ => 128u };
-                native.Value.Mouse = new() { Flags = input.B == 1 ? flag : flag * 2, Data = input.A >= 4 ? (uint)(input.A - 3) : 0 }; break;
+                uint flag = input.A switch { 1 => 0x2u, 2 => 0x8u, 3 => 0x20u, _ => 0x80u };
+                native.Value.Mouse = new() { Flags = input.B == 1 ? flag : flag * 2, Data = input.A >= 4 ? (uint)(input.A - 3) : 0 };
+                break;
             case EventKind.Key:
                 native.Type = 1;
-                native.Value.Key = new() { Scan = (ushort)input.A, Flags = 8u | (uint)input.C | (input.B == 0 ? 2u : 0) }; break;
+                native.Value.Key = new() { Scan = (ushort)input.A, Flags = 0x8u | (uint)input.C | (input.B == 0 ? 0x2u : 0) };
+                break;
+            default: return;
         }
         if (Native.SendInput(1, [native], Marshal.SizeOf<Native.Input>()) != 1)
-            throw new Win32Exception(Marshal.GetLastWin32Error(), "Giriş uygulanamadı. Hedef uygulamanın yetki düzeyini kontrol edin.");
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "Giriş uygulanamadı.");
     }
+
+    /// <summary>Aims at the centre of the target pixel so rounding never lands on its neighbour.</summary>
+    internal static int Normalize(int offset, int size) => (int)Math.Clamp((2L * offset + 1) * 65536 / (2L * Math.Max(size, 1)), 0, 65535);
 }
 
-// The dispatcher owns the hook message loop. Callbacks only enqueue; they never wait for the network.
-internal sealed class InputCapture : IDisposable
+/// <summary>
+/// Dedicated input thread: low-level mouse and keyboard hooks plus the cursor hider, all on one message loop.
+/// Windows silently drops a hook whose callback stalls, so callbacks only do short, lock-protected arithmetic
+/// and queue network writes; they never wait on the UI or the network.
+/// </summary>
+internal sealed class InputHost : IDisposable
 {
-    private readonly Native.HookProc mouseProc, keyProc;
-    private readonly Func<InputEvent, bool> send;
-    private readonly Action toggle;
-    private nint mouseHook, keyHook;
-    private Native.Point anchor;
-    private bool f12Down;
-    public bool Active { get; private set; }
-    public InputCapture(Func<InputEvent, bool> send, Action toggle)
+    private const uint InjectedMouse = 0x1 | 0x2, InjectedKey = 0x10;
+    private const string HiderClass = "BankoShare.CursorHider";
+    private readonly ShareController controller;
+    private readonly Thread thread;
+    private readonly ManualResetEventSlim ready = new();
+    private Native.HookProc? mouseProc, keyProc;
+    private Native.WndProc? hiderProc;
+    private Exception? startError;
+    private uint threadId;
+
+    public InputHost(ShareController controller, WindowsPlatform platform)
     {
-        this.send = send; this.toggle = toggle;
-        mouseProc = Mouse; keyProc = Key;
-        mouseHook = Native.SetWindowsHookEx(14, mouseProc, Native.GetModuleHandle(null), 0);
-        keyHook = Native.SetWindowsHookEx(13, keyProc, Native.GetModuleHandle(null), 0);
-        if (mouseHook == 0 || keyHook == 0) { var error = Marshal.GetLastWin32Error(); Dispose(); throw new Win32Exception(error); }
+        this.controller = controller;
+        thread = new Thread(() => Run(platform)) { IsBackground = true, Name = "Banko Share input", Priority = ThreadPriority.Highest };
+        thread.Start();
+        ready.Wait();
+        if (startError != null) throw startError;
     }
-    public void SetActive(bool active)
+
+    private void Run(WindowsPlatform platform)
     {
-        Active = active;
-        if (active) Native.GetCursorPos(out anchor);
-        else send(new(EventKind.ReleaseAll));
-    }
-    private nint Mouse(int code, nint message, nint data)
-    {
-        if (code < 0 || !Active) return Native.CallNextHookEx(mouseHook, code, message, data);
-        var e = Marshal.PtrToStructure<Native.MouseHook>(data);
-        if ((e.Flags & 1) != 0) return Native.CallNextHookEx(mouseHook, code, message, data);
-        InputEvent? input = (int)message switch
+        nint mouseHook = 0, keyHook = 0, hider = 0;
+        try
         {
-            0x200 => new(EventKind.Move, Math.Clamp(e.Point.X - anchor.X, -32767, 32767), Math.Clamp(e.Point.Y - anchor.Y, -32767, 32767)),
-            0x201 => new(EventKind.Button, 1, 1), 0x202 => new(EventKind.Button, 1, 0),
-            0x204 => new(EventKind.Button, 2, 1), 0x205 => new(EventKind.Button, 2, 0),
-            0x207 => new(EventKind.Button, 3, 1), 0x208 => new(EventKind.Button, 3, 0),
-            0x20B => new(EventKind.Button, (int)(e.Data >> 16) + 3, 1),
-            0x20C => new(EventKind.Button, (int)(e.Data >> 16) + 3, 0),
-            0x20A => new(EventKind.Wheel, unchecked((short)(e.Data >> 16))),
-            0x20E => new(EventKind.Wheel, unchecked((short)(e.Data >> 16)), 1), _ => null
-        };
-        if (input.HasValue && !send(input.Value)) Active = false;
-        return Active ? 1 : Native.CallNextHookEx(mouseHook, code, message, data);
-    }
-    private nint Key(int code, nint message, nint data)
-    {
-        if (code < 0) return Native.CallNextHookEx(keyHook, code, message, data);
-        var e = Marshal.PtrToStructure<Native.KeyHook>(data);
-        if ((e.Flags & 0x10) != 0) return Native.CallNextHookEx(keyHook, code, message, data);
-        bool down = (int)message is 0x100 or 0x104;
-        if (e.Vk == 0x7B)
-        {
-            if (down && !f12Down) toggle();
-            f12Down = down; return 1;
+            threadId = Native.GetCurrentThreadId();
+            var module = Native.GetModuleHandle(null);
+            hider = CreateHider(module);
+            platform.HiderWindow = hider;
+            mouseProc = OnMouse; keyProc = OnKey;
+            mouseHook = Native.SetWindowsHookEx(14, mouseProc, module, 0);
+            keyHook = Native.SetWindowsHookEx(13, keyProc, module, 0);
+            if (mouseHook == 0 || keyHook == 0) throw new Win32Exception(Marshal.GetLastWin32Error(), "Fare/klavye kancası kurulamadı.");
         }
-        if (!Active || e.Scan is 0 or > 255) return Native.CallNextHookEx(keyHook, code, message, data);
-        if (!send(new(EventKind.Key, (int)e.Scan, down ? 1 : 0, (int)(e.Flags & 1)))) Active = false;
-        return Active ? 1 : Native.CallNextHookEx(keyHook, code, message, data);
-    }
-    public void Dispose()
-    {
-        Active = false;
+        catch (Exception e) { startError = e; }
+        ready.Set();
+        if (startError == null)
+            while (Native.GetMessage(out var msg, 0, 0, 0) > 0) { Native.TranslateMessage(ref msg); Native.DispatchMessage(ref msg); }
         if (mouseHook != 0) Native.UnhookWindowsHookEx(mouseHook);
         if (keyHook != 0) Native.UnhookWindowsHookEx(keyHook);
-        mouseHook = keyHook = 0;
+        platform.HiderWindow = 0;
+        if (hider != 0) Native.DestroyWindow(hider);
+    }
+
+    /// <summary>
+    /// A 64×64, almost fully transparent, never-activated topmost window that clears the cursor shape.
+    /// The parked local cursor sits on it while a peer owns the pointer, so it is invisible.
+    /// </summary>
+    private nint CreateHider(nint module)
+    {
+        hiderProc = (hwnd, message, w, l) =>
+        {
+            if (message == 0x0020) { Native.SetCursor(0); return 1; } // WM_SETCURSOR: no cursor shape
+            if (message == 0x0021) return 3;                          // WM_MOUSEACTIVATE: MA_NOACTIVATE
+            return Native.DefWindowProc(hwnd, message, w, l);
+        };
+        var cls = new Native.WndClassEx { Size = (uint)Marshal.SizeOf<Native.WndClassEx>(), Proc = hiderProc, Instance = module, ClassName = HiderClass };
+        Native.RegisterClassEx(ref cls);
+        var hwnd = Native.CreateWindowEx(0x8 | 0x80 | 0x08000000 | 0x80000, HiderClass, "", 0x80000000, 0, 0, 64, 64, 0, 0, module, 0);
+        if (hwnd == 0) throw new Win32Exception(Marshal.GetLastWin32Error(), "İmleç penceresi oluşturulamadı.");
+        Native.SetLayeredWindowAttributes(hwnd, 0, 1, 0x2);
+        return hwnd;
+    }
+
+    private nint OnMouse(int code, nint message, nint data)
+    {
+        if (code >= 0)
+        {
+            try
+            {
+                var e = Marshal.PtrToStructure<Native.MouseHook>(data);
+                if ((e.Flags & InjectedMouse) == 0 && Dispatch((int)message, e) == HookResult.Block) return 1;
+            }
+            catch (Exception) { /* An exception must never cross into the OS hook chain. */ }
+        }
+        return Native.CallNextHookEx(0, code, message, data);
+    }
+
+    private HookResult Dispatch(int message, Native.MouseHook e)
+    {
+        int xButton = (int)(e.Data >> 16) + 3;
+        return message switch
+        {
+            0x200 => controller.OnMouseMove(new(e.Point.X, e.Point.Y), Cursor(), ButtonsHeld()),
+            0x201 or 0x202 => controller.OnMouseButton(1, message == 0x201),
+            0x204 or 0x205 => controller.OnMouseButton(2, message == 0x204),
+            0x207 or 0x208 => controller.OnMouseButton(3, message == 0x207),
+            0x20B or 0x20C when xButton is 4 or 5 => controller.OnMouseButton(xButton, message == 0x20B),
+            0x20A => controller.OnMouseWheel(unchecked((short)(e.Data >> 16)), false),
+            0x20E => controller.OnMouseWheel(unchecked((short)(e.Data >> 16)), true),
+            _ => HookResult.Pass
+        };
+    }
+
+    private nint OnKey(int code, nint message, nint data)
+    {
+        if (code >= 0)
+        {
+            try
+            {
+                var e = Marshal.PtrToStructure<Native.KeyHook>(data);
+                bool down = (int)message is 0x100 or 0x104;
+                if ((e.Flags & InjectedKey) == 0 && controller.OnKey((int)e.Vk, (int)e.Scan, (e.Flags & 1) != 0, down, e.Time) == HookResult.Block) return 1;
+            }
+            catch (Exception) { }
+        }
+        return Native.CallNextHookEx(0, code, message, data);
+    }
+
+    private static PointI Cursor() => Native.GetCursorPos(out var p) ? new(p.X, p.Y) : default;
+
+    private static bool ButtonsHeld()
+    {
+        foreach (var vk in (ReadOnlySpan<int>)[0x01, 0x02, 0x04, 0x05, 0x06])
+            if ((Native.GetAsyncKeyState(vk) & 0x8000) != 0) return true;
+        return false;
+    }
+
+    public void Dispose()
+    {
+        if (threadId != 0) Native.PostThreadMessage(threadId, 0x0012, 0, 0);
+        thread.Join(TimeSpan.FromSeconds(2));
+        ready.Dispose();
     }
 }

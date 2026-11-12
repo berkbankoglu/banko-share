@@ -1,10 +1,12 @@
+using System.Buffers;
 using System.Buffers.Binary;
+using System.Text.Json;
 
 namespace BankoShare.Core;
 
 public enum EventKind : byte { Heartbeat, Move, Button, Wheel, Key, ReleaseAll }
 
-// Fixed-size, versioned frames prevent unbounded peer-controlled allocations.
+/// <summary>Fixed-size input event. Move carries an absolute position in the receiver's desktop coordinates.</summary>
 public readonly record struct InputEvent(EventKind Kind, int A = 0, int B = 0, int C = 0)
 {
     public const int Size = 16;
@@ -39,4 +41,80 @@ public readonly record struct InputEvent(EventKind Kind, int A = 0, int B = 0, i
         };
         if (!valid) throw new InvalidDataException("Invalid input event.");
     }
+}
+
+public enum FrameType : byte { Heartbeat, Hello, Layout, Enter, Input, Leave, Reclaim, PairRequest, PairAccepted }
+
+/// <summary>Port is the sender's listening port; an inbound connection only reveals an ephemeral one.</summary>
+public sealed record HelloMessage(DeviceInfo Device, string Version, int Port);
+public sealed record PairRequestMessage(string Secret, string Name);
+
+/// <summary>
+/// Wire frame: version byte, type byte, little-endian payload length, payload.
+/// Every type has a fixed or bounded length, so a peer can never make us allocate more than 16 KB.
+/// </summary>
+public readonly record struct Frame(FrameType Type, byte[] Payload)
+{
+    public const byte Version = 2;
+    public const int HeaderSize = 4;
+    public const int MaxPayload = 16 * 1024;
+    private static readonly JsonSerializerOptions Json = new() { MaxDepth = 16 };
+
+    public static Frame Empty(FrameType type) => new(type, []);
+    public static Frame Input(InputEvent e) => new(FrameType.Input, e.Encode());
+    public static Frame Enter(PointI p) => new(FrameType.Enter, new InputEvent(EventKind.Move, p.X, p.Y).Encode());
+    public static Frame Of<T>(FrameType type, T value)
+    {
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(value, Json);
+        if (bytes.Length is 0 or > MaxPayload) throw new InvalidDataException("Message too large.");
+        return new(type, bytes);
+    }
+
+    public InputEvent AsInput() => InputEvent.Decode(Payload);
+    public PointI AsPoint() { var e = AsInput(); if (e.Kind != EventKind.Move) throw new InvalidDataException("Expected position."); return new(e.A, e.B); }
+    public T As<T>() where T : class
+    {
+        try { return JsonSerializer.Deserialize<T>(Payload, Json) ?? throw new InvalidDataException("Empty message."); }
+        catch (JsonException e) { throw new InvalidDataException("Malformed message.", e); }
+    }
+
+    /// <summary>Consecutive absolute moves can be merged: only the newest position matters.</summary>
+    public bool IsMove => Type == FrameType.Input && Payload.Length == InputEvent.Size && Payload[1] == (byte)EventKind.Move;
+
+    public void WriteTo(IBufferWriter<byte> writer)
+    {
+        var span = writer.GetSpan(HeaderSize + Payload.Length);
+        span[0] = Version; span[1] = (byte)Type;
+        BinaryPrimitives.WriteUInt16LittleEndian(span[2..], (ushort)Payload.Length);
+        Payload.CopyTo(span[HeaderSize..]);
+        writer.Advance(HeaderSize + Payload.Length);
+    }
+
+    public static async Task WriteAsync(Stream stream, Frame frame, CancellationToken token)
+    {
+        var buffer = new ArrayBufferWriter<byte>(HeaderSize + frame.Payload.Length);
+        frame.WriteTo(buffer);
+        await stream.WriteAsync(buffer.WrittenMemory, token);
+        await stream.FlushAsync(token);
+    }
+
+    public static async Task<Frame> ReadAsync(Stream stream, CancellationToken token)
+    {
+        var header = new byte[HeaderSize];
+        await stream.ReadExactlyAsync(header, token);
+        var type = (FrameType)header[1];
+        int length = BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(2));
+        if (header[0] != Version || !LengthAllowed(type, length)) throw new InvalidDataException("Unsupported frame.");
+        var payload = length == 0 ? [] : new byte[length];
+        if (length != 0) await stream.ReadExactlyAsync(payload, token);
+        return new(type, payload);
+    }
+
+    private static bool LengthAllowed(FrameType type, int length) => type switch
+    {
+        FrameType.Heartbeat or FrameType.Leave or FrameType.Reclaim or FrameType.PairAccepted => length == 0,
+        FrameType.Enter or FrameType.Input => length == InputEvent.Size,
+        FrameType.Hello or FrameType.Layout or FrameType.PairRequest => length is > 0 and <= MaxPayload,
+        _ => false
+    };
 }
