@@ -96,7 +96,7 @@ internal static class NetworkTests
             pair.Arrange();
             await T.Eventually(() => pair.B.Controller.Snapshot().Layout.OffsetOf(pair.B.Id) - pair.B.Controller.Snapshot().Layout.OffsetOf(pair.A.Id)
                 == Fixtures.RemoteAboveMiddle, "edited layout reached the peer");
-            T.Check(pair.A.Store.Load<ScreenLayout?>(ShareController.LayoutFile, () => null)?.Revision >= 1, "Layout not saved");
+            await T.Eventually(() => pair.A.Store.Load<ScreenLayout?>(ShareController.LayoutFile, () => null)?.Revision >= 1, "layout saved");
         });
         await s.TestAsync("The pointer crosses to the peer, types there, and the peer's own mouse takes it back", async () =>
         {
@@ -131,6 +131,51 @@ internal static class NetworkTests
             await T.Eventually(() => pair.A.Controller.Snapshot().ControllingName == null, "returned home");
             T.Check(pair.A.Platform.Warps.Last() == new PointI(1000, 0) && pair.A.Platform.Hidden.Last() == false, "Pointer stranded");
             T.Equal(HookResult.Pass, pair.A.Controller.OnMouseMove(new(1000, -6), new(1000, 0), false), "Offline peer still a target");
+        });
+        await s.TestAsync("Jump hotkeys follow the layout letters, and the peer releases a held Alt without opening a menu", async () =>
+        {
+            using var pair = await ControllerPair.Create();
+            pair.Arrange();
+            await T.Eventually(() => pair.B.Controller.Snapshot().Layout.SameArrangement(pair.A.Controller.Snapshot().Layout), "layout synced");
+            var a = pair.A.Controller;
+            a.UpdateOptions(o => o with { JumpMods = KeyMods.Ctrl | KeyMods.Alt });
+            a.OnKey(0xA2, 29, false, true, 0); a.OnKey(0xA4, 56, false, true, 0);
+            T.Equal(HookResult.Block, a.OnKey(0x31, 2, false, true, 0), "Ctrl+Alt+1");
+            await T.Eventually(() => pair.B.Platform.Injected.Contains(new(EventKind.Move, 960, 540)), "jumped to the centre of A (DESKTOP)");
+            T.Check(pair.A.Platform.Masks == 1, "Releasing the local Alt would open a menu");
+            T.Equal(HookResult.Block, a.OnKey(0x31, 2, false, false, 0), "Hotkey release must stay swallowed");
+            T.Equal(HookResult.Pass, a.OnKey(0xA4, 56, false, false, 0), "Alt pressed here is released here");
+            T.Equal(HookResult.Pass, a.OnKey(0xA2, 29, false, false, 0), "Ctrl pressed here is released here");
+            // Pressed while DESKTOP has the pointer, so they go there; 3 = C, the middle monitor.
+            a.OnKey(0xA2, 29, false, true, 0); a.OnKey(0xA4, 56, false, true, 0);
+            await T.Eventually(() => pair.B.Platform.Injected.Contains(new(EventKind.Key, 56, 1)), "Alt reached DESKTOP");
+            T.Equal(HookResult.Block, a.OnKey(0x33, 4, false, true, 0), "Ctrl+Alt+3");
+            await T.Eventually(() => a.Snapshot().ControllingName == null && pair.B.Controller.Snapshot().ControlledByName == null, "came home");
+            T.Equal(new PointI(1280, 720), pair.A.Platform.Warps.Last(), "Centre of monitor C");
+            var injected = pair.B.Platform.Injected.ToList();
+            int mask = injected.IndexOf(new(EventKind.Heartbeat, 0xE8)), altUp = injected.IndexOf(new(EventKind.Key, 56, 0));
+            T.Check(mask >= 0 && mask < altUp, $"Mask {mask} must come before the Alt release {altUp}");
+            T.Check(!pair.B.Platform.Injected.Any(e => e.Kind == EventKind.Key && e.A is 2 or 4), "Digit leaked to DESKTOP");
+        });
+        await s.TestAsync("The toggle hotkey and blocked pushes report a notice, and options are saved", async () =>
+        {
+            using var pair = await ControllerPair.Create();
+            pair.Arrange();
+            await T.Eventually(() => pair.B.Controller.Snapshot().Layout.SameArrangement(pair.A.Controller.Snapshot().Layout), "layout synced");
+            var a = pair.A.Controller;
+            List<string> notices = [];
+            a.Notice += n => { lock (notices) notices.Add(n); };
+            a.UpdateOptions(o => o with { RequiredKey = SwitchKey.Shift, ToggleHotkey = new(KeyMods.Ctrl | KeyMods.Shift, 0x53) });
+            T.Equal(HookResult.Pass, a.OnMouseMove(new(1000, -6), new(1000, 0), false), "Crossed without Shift");
+            lock (notices) T.Check(notices.SequenceEqual(["Geçmek için Shift tuşunu basılı tutun."]), "Notices: " + string.Join(" | ", notices));
+            a.OnKey(0xA2, 29, false, true, 0); a.OnKey(0xA0, 42, false, true, 0);
+            T.Equal(HookResult.Block, a.OnKey(0x53, 31, false, true, 0), "Ctrl+Shift+S");
+            T.Check(!a.Options.SwitchingEnabled, "Toggle did not switch edge switching off");
+            lock (notices) T.Check(notices.Last() == "Kenardan geçiş kapatıldı.", "Notices: " + string.Join(" | ", notices));
+            await T.Eventually(() => pair.A.Store.Load<SwitchOptions?>(ShareController.PreferencesFile, () => null) is { SwitchingEnabled: false, RequiredKey: SwitchKey.Shift },
+                "options saved in the background");
+            lock (notices) T.Check(!notices.Any(n => n.Contains("kaydedilemedi")), "Save failed: " + string.Join(" | ", notices));
+            T.Equal(HookResult.Pass, a.OnMouseMove(new(1000, -7), new(1000, 0), false), "Crossed while switching is off");
         });
         return s.Count;
     }
@@ -167,7 +212,7 @@ internal static class NetworkTests
         public void Dispose()
         {
             if (disposed) return; disposed = true;
-            Controller?.Dispose(); Network.Dispose(); Identity.Dispose();
+            Controller?.Dispose(); Network.Dispose(); Network.Directory.Flush(TimeSpan.FromSeconds(2)); Identity.Dispose();
             try { Directory.Delete(Store.DirectoryPath, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
     }

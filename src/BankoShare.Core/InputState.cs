@@ -23,6 +23,8 @@ public sealed class InputState(Action<InputEvent> sink)
         }
     }
 
+    public bool IsKeyHeld(int scan) => keys.Any(k => k.Scan == scan);
+
     public void ReleaseAll()
     {
         List<Exception> failures = [];

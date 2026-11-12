@@ -21,6 +21,14 @@
   <Style x:Key="Secondary" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Background" Value="#2A3A55"/><Setter Property="Foreground" Value="#EAF1FF"/></Style>
   <Style TargetType="TextBox"><Setter Property="Padding" Value="10,8"/><Setter Property="Margin" Value="0,6,0,10"/><Setter Property="Background" Value="#202D42"/><Setter Property="Foreground" Value="#FFFFFF"/><Setter Property="BorderBrush" Value="#40516B"/><Setter Property="CaretBrush" Value="White"/></Style>
   <Style TargetType="CheckBox"><Setter Property="Foreground" Value="#EAF1FF"/></Style>
+  <Style TargetType="RadioButton"><Setter Property="Foreground" Value="#EAF1FF"/><Setter Property="Margin" Value="0,6,22,0"/></Style>
+  <Style x:Key="HotkeyBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+   <Setter Property="IsReadOnly" Value="True"/><Setter Property="IsReadOnlyCaretVisible" Value="False"/><Setter Property="Cursor" Value="Hand"/>
+   <Setter Property="Margin" Value="0,4"/><Setter Property="FontFamily" Value="Consolas"/>
+   <EventSetter Event="PreviewKeyDown" Handler="Hotkey_PreviewKeyDown"/>
+   <EventSetter Event="GotKeyboardFocus" Handler="Hotkey_GotFocus"/>
+   <EventSetter Event="LostKeyboardFocus" Handler="Hotkey_LostFocus"/>
+  </Style>
   <Style x:Key="Card" TargetType="Border"><Setter Property="Background" Value="#1B293D"/><Setter Property="CornerRadius" Value="10"/><Setter Property="Padding" Value="20"/><Setter Property="Margin" Value="0,0,0,16"/></Style>
   <Style x:Key="Title" TargetType="TextBlock"><Setter Property="FontSize" Value="26"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
   <Style x:Key="Heading" TargetType="TextBlock"><Setter Property="FontSize" Value="17"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
@@ -120,10 +128,71 @@
 
    <ScrollViewer x:Name="SwitchingPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto"><StackPanel Margin="32,28,32,24">
     <TextBlock Text="Geçiş ayarları" Style="{StaticResource Title}"/>
-    <Border Style="{StaticResource Card}" Margin="0,20,0,16"><StackPanel>
-     <CheckBox x:Name="SwitchingBox" Content="Ekran kenarından diğer bilgisayara geç" FontSize="15" Checked="Switching_Changed" Unchecked="Switching_Changed"/>
-     <TextBlock Style="{StaticResource Note}" Margin="24,4,0,0" Text="Kapalıyken imleç bu bilgisayarda kalır; bağlantılar açık kalır ve diğer bilgisayar buraya geçebilir."/>
+    <TextBlock Style="{StaticResource Note}" Margin="0,6,0,20"
+     Text="Bu ayarlar, imleci bu bilgisayarın faresi ve klavyesiyle yönetirken geçerlidir. Diğer bilgisayar kendi ayarlarını kullanır."/>
+
+    <Border Style="{StaticResource Card}"><StackPanel>
+     <CheckBox x:Name="SwitchingBox" Content="Ekran kenarından diğer bilgisayara geç" FontSize="15" Checked="Option_Changed" Unchecked="Option_Changed"/>
+     <TextBlock Style="{StaticResource Note}" Margin="24,4,0,0" Text="Kapalıyken imleç kenardan geçmez, kısayollar çalışmaya devam eder. Bağlantılar açık kalır ve diğer bilgisayar buraya geçebilir."/>
+     <CheckBox x:Name="EqualizeBox" Content="Ekran boyutlarını eşitle" Margin="0,16,0,0" Checked="Option_Changed" Unchecked="Option_Changed"/>
+     <TextBlock Style="{StaticResource Note}" Margin="24,4,0,0" Text="Kenarın tamamı karşısındaki kenarın tamamına orantılı eşlenir. Boyutları farklı monitörler arasında kenarın her yerinden geçilir."/>
+     <CheckBox x:Name="WrapBox" Content="İmleci ekranların etrafında döndür" Margin="0,16,0,0" Checked="Option_Changed" Unchecked="Option_Changed"/>
+     <TextBlock Style="{StaticResource Note}" Margin="24,4,0,0" Text="Düzenin dış kenarından çıkan imleç, aynı satırın ya da sütunun öbür ucundan girer."/>
     </StackPanel></Border>
+
+    <Border Style="{StaticResource Card}"><StackPanel>
+     <TextBlock Text="Geçişi engelle" Style="{StaticResource Heading}"/>
+     <TextBlock Style="{StaticResource Note}" Text="Engel varken imleç kenarda durur ve nedeni durum çubuğunda yazar. Pencere koşulları bu bilgisayardan çıkarken denetlenir; köşe, tuş ve çift dokunma her geçişte geçerlidir."/>
+     <CheckBox x:Name="FullscreenBox" Content="Tam ekran bir uygulama öndeyken (oyun, sunum, video)" Margin="0,14,0,0" Checked="Option_Changed" Unchecked="Option_Changed"/>
+     <CheckBox x:Name="MaximizedBox" Content="Büyütülmüş bir pencere öndeyken" Margin="0,10,0,0" Checked="Option_Changed" Unchecked="Option_Changed"/>
+     <TextBlock Style="{StaticResource Note}" Margin="24,2,0,0" Text="Yalnızca imlecin çıktığı monitördeki pencere sayılır."/>
+     <CheckBox x:Name="CornersBox" Content="Ekran köşelerinde" Margin="0,10,0,0" Checked="Option_Changed" Unchecked="Option_Changed"/>
+     <TextBlock Style="{StaticResource Note}" Margin="24,2,0,0" Text="Köşedeki Başlat veya Kapat düğmesine giderken yanlışlıkla geçmezsiniz."/>
+     <TextBlock Text="Geçiş tuşu" Margin="0,18,0,0" FontWeight="SemiBold"/>
+     <WrapPanel>
+      <RadioButton x:Name="KeyNone" GroupName="SwitchKey" Content="Gerekmez" Checked="Option_Changed"/>
+      <RadioButton x:Name="KeyShift" GroupName="SwitchKey" Content="Shift basılıyken geç" Checked="Option_Changed"/>
+      <RadioButton x:Name="KeyCtrl" GroupName="SwitchKey" Content="Ctrl basılıyken geç" Checked="Option_Changed"/>
+      <RadioButton x:Name="KeyAlt" GroupName="SwitchKey" Content="Sol Alt basılıyken geç" Checked="Option_Changed"/>
+     </WrapPanel>
+     <TextBlock Text="Kenara çift dokunma" Margin="0,18,0,0" FontWeight="SemiBold"/>
+     <WrapPanel>
+      <RadioButton x:Name="TapOff" GroupName="DoubleTap" Content="Kapalı" Checked="Option_Changed"/>
+      <RadioButton x:Name="TapOverride" GroupName="DoubleTap" Content="Engel varken çift dokunarak geç" Checked="Option_Changed"/>
+      <RadioButton x:Name="TapAlways" GroupName="DoubleTap" Content="Her geçişte çift dokunma iste" Checked="Option_Changed"/>
+     </WrapPanel>
+     <TextBlock Style="{StaticResource Note}" Text="Kenara dokunun, imleci biraz geri çekin ve yarım saniye içinde yeniden dokunun."/>
+     <TextBlock Text="Bu programlar öndeyken geçme" Margin="0,18,0,0" FontWeight="SemiBold"/>
+     <DockPanel>
+      <Button x:Name="AddProgramButton" DockPanel.Dock="Right" Content="Açık programlardan ekle" Style="{StaticResource Secondary}" Margin="10,6,0,10" Click="AddProgram_Click"/>
+      <TextBox x:Name="ProgramsBox" LostKeyboardFocus="Programs_LostFocus" KeyDown="Programs_KeyDown" AutomationProperties.Name="Geçişi engelleyen programlar"/>
+     </DockPanel>
+     <TextBlock Style="{StaticResource Note}" Margin="0" Text="Program adlarını virgülle ayırın, ör. oyun.exe, obs64.exe."/>
+    </StackPanel></Border>
+
+    <Border Style="{StaticResource Card}"><StackPanel>
+     <TextBlock Text="Kısayollar" Style="{StaticResource Heading}"/>
+     <TextBlock Style="{StaticResource Note}" Text="Kutuya tıklayıp tuş birleşimine basın; silmek için Delete. En az iki değiştirici gerekir: Ctrl, sol Alt veya Shift. AltGr kısayol sayılmaz, böylece @, # gibi karakterler etkilenmez."/>
+     <Grid Margin="0,10,0,0">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="240"/><ColumnDefinition Width="260"/></Grid.ColumnDefinitions>
+      <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+      <TextBlock Text="Kenardan geçişi aç/kapat" VerticalAlignment="Center"/>
+      <TextBox x:Name="ToggleHotkeyBox" Grid.Column="1" Style="{StaticResource HotkeyBox}" Tag="Toggle" AutomationProperties.Name="Kenardan geçişi aç/kapat kısayolu"/>
+      <TextBlock Grid.Row="1" Text="Sonraki bilgisayara geç" VerticalAlignment="Center"/>
+      <TextBox x:Name="NextHotkeyBox" Grid.Row="1" Grid.Column="1" Style="{StaticResource HotkeyBox}" Tag="Next" AutomationProperties.Name="Sonraki bilgisayar kısayolu"/>
+      <TextBlock Grid.Row="2" Text="Bu bilgisayara dön" VerticalAlignment="Center"/>
+      <TextBox x:Name="HomeHotkeyBox" Grid.Row="2" Grid.Column="1" Style="{StaticResource HotkeyBox}" Tag="Home" AutomationProperties.Name="Bu bilgisayara dön kısayolu"/>
+     </Grid>
+     <TextBlock x:Name="HotkeyStatusText" Style="{StaticResource Note}" Foreground="#F6C177" Visibility="Collapsed"/>
+     <TextBlock Text="Monitöre atla" Margin="0,16,0,0" FontWeight="SemiBold"/>
+     <WrapPanel>
+      <RadioButton x:Name="JumpOff" GroupName="Jump" Content="Kapalı" Checked="Option_Changed"/>
+      <RadioButton x:Name="JumpCtrlAlt" GroupName="Jump" Content="Ctrl + sol Alt + rakam" Checked="Option_Changed"/>
+      <RadioButton x:Name="JumpCtrlShift" GroupName="Jump" Content="Ctrl + Shift + rakam" Checked="Option_Changed"/>
+     </WrapPanel>
+     <TextBlock Style="{StaticResource Note}" Text="1 = A, 2 = B … Harfler Monitör düzeni sayfasındaki sırayı izler. Bağlı olmayan bilgisayarın monitörüne atlanmaz. @, # gibi karakterleri AltGr yerine Ctrl + sol Alt ile yazıyorsanız Ctrl + Shift'i seçin."/>
+    </StackPanel></Border>
+
     <Border Style="{StaticResource Card}"><StackPanel>
      <TextBlock Text="Nasıl çalışır" Style="{StaticResource Heading}"/>
      <TextBlock Style="{StaticResource Note}" Text="• İmleci, monitör düzeninde diğer bilgisayara değen bir kenara itin. Klavye de imleçle birlikte geçer."/>

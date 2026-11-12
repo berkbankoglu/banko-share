@@ -8,6 +8,7 @@ var passed = 0;
 passed += await ProtocolTests.Run();
 passed += LayoutTests.Run();
 passed += SwitchEngineTests.Run();
+passed += SwitchOptionsTests.Run();
 passed += await NetworkTests.Run();
 passed += await UpdateTests.Run();
 passed += InputStateTests.Run();

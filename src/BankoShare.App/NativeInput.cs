@@ -48,6 +48,17 @@ internal static class Native
     [DllImport("shcore.dll")] internal static extern int GetDpiForMonitor(nint monitor, int type, out uint dpiX, out uint dpiY);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] internal static extern nint GetModuleHandle(string? name);
     [DllImport("kernel32.dll")] internal static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] internal static extern nint GetForegroundWindow();
+    [DllImport("user32.dll")] internal static extern nint GetShellWindow();
+    [DllImport("user32.dll")] internal static extern bool GetWindowRect(nint hwnd, out Rect rect);
+    [DllImport("user32.dll")] internal static extern bool IsZoomed(nint hwnd);
+    [DllImport("user32.dll")] internal static extern nint MonitorFromWindow(nint hwnd, uint flags);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern int GetClassName(nint hwnd, char[] name, int max);
+    [DllImport("user32.dll")] internal static extern uint GetWindowThreadProcessId(nint hwnd, out uint processId);
+    [DllImport("kernel32.dll")] internal static extern nint OpenProcess(uint access, bool inherit, uint processId);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] internal static extern bool QueryFullProcessImageName(nint process, uint flags, char[] name, ref int size);
+    [DllImport("kernel32.dll")] internal static extern bool CloseHandle(nint handle);
+    [DllImport("user32.dll")] internal static extern uint MapVirtualKey(uint code, uint type);
 }
 
 internal static class Monitors
@@ -117,8 +128,73 @@ internal sealed class WindowsPlatform(MonitorInfo[] monitors) : IInputPlatform
             throw new Win32Exception(Marshal.GetLastWin32Error(), "Giriş uygulanamadı.");
     }
 
+    /// <summary>
+    /// A tap of the unassigned virtual key 0xE8 between Alt down and Alt up, so Windows does not treat the
+    /// release as a lone Alt press and focus the menu bar.
+    /// </summary>
+    public void MaskMenuKey()
+    {
+        var down = new Native.Input { Type = 1 };
+        down.Value.Key = new() { Vk = 0xE8 };
+        var up = down;
+        up.Value.Key.Flags = 0x2;
+        Native.SendInput(2, [down, up], Marshal.SizeOf<Native.Input>());
+    }
+
     /// <summary>Aims at the centre of the target pixel so rounding never lands on its neighbour.</summary>
     internal static int Normalize(int offset, int size) => (int)Math.Clamp((2L * offset + 1) * 65536 / (2L * Math.Max(size, 1)), 0, 65535);
+}
+
+/// <summary>
+/// Foreground-window and key-state queries for the switch engine. Runs on the input thread, at most once per
+/// push against an edge, so it stays a handful of quick user32 calls.
+/// </summary>
+internal sealed class WindowsEnvironment : ISwitchEnvironment
+{
+    private static readonly HashSet<string> ShellClasses = ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"];
+    private readonly char[] buffer = new char[1024];
+
+    public bool IsKeyDown(int vk) => (Native.GetAsyncKeyState(vk) & 0x8000) != 0;
+
+    public BlockReason CheckForeground(RectI from, SwitchOptions options)
+    {
+        var hwnd = Native.GetForegroundWindow();
+        if (hwnd == 0 || hwnd == Native.GetShellWindow() || IsShell(hwnd)) return BlockReason.None;
+        if (options.BlockedPrograms.Length > 0 && ProcessName(hwnd) is { } name && options.BlockedPrograms.Contains(name))
+            return BlockReason.Program;
+        if (!options.BlockFullscreen && !options.BlockMaximized) return BlockReason.None;
+        // Only a window on the monitor being left counts: a video playing full screen elsewhere does not block.
+        var info = new Native.MonitorInfoEx { Size = (uint)Marshal.SizeOf<Native.MonitorInfoEx>() };
+        if (!Native.GetMonitorInfo(Native.MonitorFromWindow(hwnd, 2), ref info)) return BlockReason.None;
+        var m = info.Monitor;
+        if (new RectI(m.Left, m.Top, m.Right - m.Left, m.Bottom - m.Top) != from) return BlockReason.None;
+        var zoomed = Native.IsZoomed(hwnd);
+        if (options.BlockMaximized && zoomed) return BlockReason.Maximized;
+        if (options.BlockFullscreen && !zoomed && Native.GetWindowRect(hwnd, out var r)
+            && r.Left <= m.Left && r.Top <= m.Top && r.Right >= m.Right && r.Bottom >= m.Bottom)
+            return BlockReason.Fullscreen;
+        return BlockReason.None;
+    }
+
+    private bool IsShell(nint hwnd)
+    {
+        var length = Native.GetClassName(hwnd, buffer, buffer.Length);
+        return length > 0 && ShellClasses.Contains(new string(buffer, 0, length));
+    }
+
+    /// <summary>Executable name of the window's process, normalised like the user's list. Works for elevated processes too.</summary>
+    private string? ProcessName(nint hwnd)
+    {
+        Native.GetWindowThreadProcessId(hwnd, out var pid);
+        var process = pid == 0 ? 0 : Native.OpenProcess(0x1000, false, pid); // PROCESS_QUERY_LIMITED_INFORMATION
+        if (process == 0) return null;
+        try
+        {
+            var size = buffer.Length;
+            return Native.QueryFullProcessImageName(process, 0, buffer, ref size) ? SwitchOptions.NormalizeProgram(new string(buffer, 0, size)) : null;
+        }
+        finally { Native.CloseHandle(process); }
+    }
 }
 
 /// <summary>
@@ -210,7 +286,7 @@ internal sealed class InputHost : IDisposable
         int xButton = (int)(e.Data >> 16) + 3;
         return message switch
         {
-            0x200 => controller.OnMouseMove(new(e.Point.X, e.Point.Y), Cursor(), ButtonsHeld()),
+            0x200 => controller.OnMouseMove(new(e.Point.X, e.Point.Y), Cursor(), ButtonsHeld(), e.Time),
             0x201 or 0x202 => controller.OnMouseButton(1, message == 0x201),
             0x204 or 0x205 => controller.OnMouseButton(2, message == 0x204),
             0x207 or 0x208 => controller.OnMouseButton(3, message == 0x207),

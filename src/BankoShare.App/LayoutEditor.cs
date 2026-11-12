@@ -40,8 +40,9 @@ internal sealed class LayoutEditor : FrameworkElement
 
     private PointI OffsetOf(string id) => id == dragId ? dragTo : layout.OffsetOf(id);
 
-    private IEnumerable<(LayoutItem Item, RectI Rect)> Screens() =>
-        items.SelectMany(i => i.Device.Monitors.Select(m => (i, m.Bounds.Offset(OffsetOf(i.Device.Id)))));
+    /// <summary>Each monitor with its device-local bounds and its place on the canvas (following an active drag).</summary>
+    private IEnumerable<(LayoutItem Item, RectI Monitor, RectI Rect)> Screens() =>
+        items.SelectMany(i => i.Device.Monitors.Select(m => (i, m.Bounds, m.Bounds.Offset(OffsetOf(i.Device.Id)))));
 
     private void Fit()
     {
@@ -68,11 +69,11 @@ internal sealed class LayoutEditor : FrameworkElement
             dc.DrawText(empty, new Point((ActualWidth - empty.Width) / 2, (ActualHeight - empty.Height) / 2));
             return;
         }
-        // Letters follow reading order on the desk: top to bottom, left to right.
-        var ordered = Screens().OrderBy(s => s.Rect.Top).ThenBy(s => s.Rect.Left).ToList();
-        for (var i = 0; i < ordered.Count; i++)
+        // Letters follow reading order on the desk, exactly as the jump hotkeys count, and hold still during a drag.
+        var letters = new Dictionary<(string, RectI), int>();
+        foreach (var (device, monitor) in layout.ReadingOrder(items.Select(i => i.Device))) letters.TryAdd((device.Id, monitor), letters.Count);
+        foreach (var (item, monitor, rect) in Screens())
         {
-            var (item, rect) = ordered[i];
             var view = ToView(rect); view.Inflate(-1.5, -1.5);
             if (view.Width < 4 || view.Height < 4) continue;
             var id = item.Device.Id;
@@ -83,7 +84,8 @@ internal sealed class LayoutEditor : FrameworkElement
             var badge = Math.Clamp(Math.Min(view.Width, view.Height) * 0.3, 14, 40);
             var centre = new Point(view.X + view.Width / 2, view.Y + view.Height / 2 - badge * 0.35);
             dc.DrawEllipse(Dark, null, centre, badge / 2, badge / 2);
-            var letter = Text(((char)('A' + i % 26)).ToString(), badge * 0.55, Light, dpi, FontWeights.Bold);
+            var index = letters.GetValueOrDefault((id, monitor), -1);
+            var letter = Text(index >= 0 ? ((char)('A' + index % 26)).ToString() : "·", badge * 0.55, Light, dpi, FontWeights.Bold);
             dc.DrawText(letter, new Point(centre.X - letter.Width / 2, centre.Y - letter.Height / 2));
             var size = Math.Clamp(view.Height * 0.1, 9, 13);
             var name = Text(item.Device.Name, size, ink, dpi, FontWeights.SemiBold, view.Width - 10);

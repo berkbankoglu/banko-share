@@ -59,7 +59,21 @@ internal sealed class FakePlatform : IInputPlatform
         if (FailWhen?.Invoke(input) == true) throw new IOException("Rejected by test platform");
         lock (gate) injected.Add(input);
     }
+    private int masks;
+    public void MaskMenuKey() { lock (gate) { masks++; injected.Add(new(EventKind.Heartbeat, 0xE8)); } }
     public PointI[] Warps { get { lock (gate) return [.. warps]; } }
     public bool[] Hidden { get { lock (gate) return [.. hidden]; } }
+    /// <summary>Applied input in order; a menu mask appears as a Heartbeat event carrying 0xE8.</summary>
     public InputEvent[] Injected { get { lock (gate) return [.. injected]; } }
+    public int Masks { get { lock (gate) return masks; } }
+}
+
+/// <summary>Scripted foreground state and physical keys, counting how often the engine asks.</summary>
+internal sealed class FakeEnvironment : ISwitchEnvironment
+{
+    public BlockReason Foreground { get; set; }
+    public HashSet<int> Down { get; } = [];
+    public int ForegroundChecks { get; private set; }
+    public BlockReason CheckForeground(RectI from, SwitchOptions options) { ForegroundChecks++; return Foreground; }
+    public bool IsKeyDown(int vk) => Down.Contains(vk);
 }

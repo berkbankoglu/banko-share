@@ -65,7 +65,7 @@ internal sealed class ShareHost : IDisposable
         var platform = new WindowsPlatform(monitors);
         var name = PeerDirectory.CleanName(Environment.MachineName);
         var network = new PeerNetwork(identity, name, new PeerDirectory(store));
-        var controller = new ShareController(new DeviceInfo(identity.Id, name, monitors), network, platform, store, version);
+        var controller = new ShareController(new DeviceInfo(identity.Id, name, monitors), network, platform, store, version, new WindowsEnvironment());
         InputHost? input = null;
         try
         {
@@ -92,6 +92,7 @@ internal sealed class ShareHost : IDisposable
         Input.Dispose();
         Controller.Dispose();
         Network.Dispose();
+        Network.Directory.Flush(TimeSpan.FromSeconds(2));
         Identity.Dispose();
     }
 }

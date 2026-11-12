@@ -58,7 +58,7 @@ internal static class SwitchEngineTests
         {
             var (engine, fx) = Setup();
             T.Equal(HookResult.Pass, engine.OnMouseMove(new(1000, -6), new(1000, 0), true, fx), "Button held");
-            engine.Enabled = false;
+            engine.Options = new SwitchOptions { SwitchingEnabled = false };
             T.Equal(HookResult.Pass, engine.OnMouseMove(new(1000, -6), new(1000, 0), false, fx), "Disabled");
             T.Check(fx.Count == 0, "Effects while blocked");
         });

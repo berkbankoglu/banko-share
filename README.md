@@ -28,7 +28,13 @@ Eşleştirme kalıcıdır. Sonraki açılışlarda iki uygulama birbirini bulup 
 - **Panik tuşu:** Esc'e hızlıca iki kez basmak imleci ve klavyeyi bu bilgisayara geri getirir.
 - **Geri alma:** Kontrol edilen bilgisayarın kendi faresini oynatmak veya tıklamak kontrolü ona verir.
 - **Güvenli durumlar:** Fare düğmesi basılıyken geçiş yapılmaz. Bağlantı koparsa, ekran kilitlenirse veya bilgisayar uykuya geçerse imleç eve döner ve karşı tarafta basılı tuşlar bırakılır.
-- **Kapatma:** **Geçiş ayarları** sayfasından kenardan geçiş kapatılabilir.
+- **Kapatma:** **Geçiş ayarları** sayfasından kenardan geçiş kapatılabilir; kısayollar yine çalışır.
+- **Geçiş ayarları** (hepsi varsayılan olarak kapalı):
+  - Ekran boyutlarını eşitleme: kenarın her yerinden orantılı geçiş.
+  - İmleci ekranların etrafında döndürme.
+  - Geçişi engelleme: tam ekran veya büyütülmüş pencere öndeyken, ekran köşelerinde, Shift/Ctrl/sol Alt basılı değilken ya da listedeki programlar öndeyken.
+  - Kenara çift dokunarak engeli aşma veya her geçişte çift dokunma isteme.
+  - Kısayollar: geçişi aç/kapat, sonraki bilgisayar, bu bilgisayara dön ve Ctrl + sol Alt (ya da Ctrl + Shift) + rakam ile monitöre atlama. AltGr kısayol sayılmaz.
 
 ## Nasıl çalışır
 
@@ -40,7 +46,7 @@ Eşleştirme kalıcıdır. Sonraki açılışlarda iki uygulama birbirini bulup 
 - Ağda bulma UDP 24820 yayınıyla yapılır. Bu yalnızca adres ipucudur; güven her zaman sabitlenmiş sertifikadan gelir. Bağlantılar TCP 24819 üzerindendir.
 - Her bağlantıda 0,5 sn'de bir kalp atışı gider; 3 sn sessizlik bağlantıyı kapatır. Kopan bağlantılar artan bekleme süreleriyle yeniden kurulur.
 - Hesap, bulut sunucusu, telemetri, tuş kaydı veya otomatik başlangıç yoktur.
-- Ayarlar `%LocalAppData%\BankoShare.Settings` içinde tutulur: eşleşen cihazlar, düzen, tercihler ve açık sertifika.
+- Ayarlar `%LocalAppData%\BankoShare.Settings` içinde tutulur: eşleşen cihazlar, düzen, tercihler ve açık sertifika. Dosyalar arka planda, geçici dosya üzerinden atomik olarak yazılır. Virüs tarayıcısı dosyayı kısa süre tutarsa yazma yeniden denenir. Fare kancası diske hiç beklemez.
 
 ## Güncellemeler
 
@@ -67,7 +73,8 @@ Testler gerçek loopback TLS bağlantılarıyla eşleştirme, yanlış kod ve se
 ## Sınırlar
 
 - Yönetici olarak çalışan pencereler, UAC, kilit ekranı ve Ctrl+Alt+Del normal kullanıcı uygulamasına kapalıdır.
-- Pano, dosya aktarımı, geçiş engelleme koşulları, hız ayarları ve tepsi simgesi henüz yok (bkz. [yol haritası](docs/PLAN.md)).
+- Pano, dosya aktarımı, hız ayarları ve tepsi simgesi henüz yok (bkz. [yol haritası](docs/PLAN.md)).
+- Tam ekran ve program koşulları yalnızca kontrol eden bilgisayardaki ön pencereye bakar; kontrol edilen bilgisayardaki tam ekran uygulama geçişi engellemez.
 - Fare takılı olmayan bir bilgisayarda Windows imleci çizmeyebilir; imleç çizme Aşama 3'te.
 - Başlangıçta iki bilgisayarda aynı klavye düzenini kullanın.
 - Süreç zorla öldürülürse karşı taraf bağlantı kopmasını 3 saniyede fark edip basılı girişleri bırakır; yine de fiziksel klavye/fare erişimini koruyun.

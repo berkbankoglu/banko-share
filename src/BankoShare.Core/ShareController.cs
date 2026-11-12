@@ -10,16 +10,18 @@ public interface IInputPlatform
     void SetCursorHidden(bool hidden, PointI anchor);
     /// <summary>Applies input on this machine. Move carries an absolute desktop position. Throws on failure.</summary>
     void Inject(InputEvent input);
+    /// <summary>Sends an unassigned key so that releasing a held Alt does not open the focused window's menu bar.</summary>
+    void MaskMenuKey();
 }
 
 public sealed record PeerStatus(string Id, string Name, bool Connected, string? Address, DeviceInfo? Device);
 public sealed record ShareSnapshot(DeviceInfo Local, IReadOnlyList<PeerStatus> Peers, IReadOnlyList<DiscoveredDevice> Discovered,
-    ScreenLayout Layout, string? ControllingName, string? ControlledByName, bool SwitchingEnabled, PairingOffer? Pairing);
+    ScreenLayout Layout, string? ControllingName, string? ControlledByName, SwitchOptions Options, PairingOffer? Pairing);
 
 /// <summary>
 /// Connects local hooks, the switch engine and the network. Plays both roles: controller (our pointer is
 /// on a peer) and controlled (a peer's pointer is here). All state is guarded by one lock that is only held
-/// for short, non-blocking work; the hook thread never waits on the network.
+/// for short, non-blocking work; the hook thread never waits on the network or the disk.
 /// </summary>
 public sealed class ShareController : IDisposable
 {
@@ -28,11 +30,13 @@ public sealed class ShareController : IDisposable
     /// <summary>Physical movement (px) on a controlled machine that takes control back.</summary>
     public const int ReclaimDistance = 12;
     public static readonly TimeSpan BusyGrace = TimeSpan.FromSeconds(60);
+    private const int AltScan = 0x38;
 
     private readonly object gate = new();
     private readonly PeerNetwork network;
     private readonly IInputPlatform platform;
     private readonly SettingsStore? store;
+    private readonly BackgroundSaver saver;
     private readonly string version;
     private readonly SwitchEngine engine;
     private readonly InputState injected;
@@ -42,17 +46,21 @@ public sealed class ShareController : IDisposable
     private int reclaimTravel;
     private DateTimeOffset lastActivity = DateTimeOffset.MinValue;
     private bool stateChanged;
+    private string? pendingNotice;
 
     public event Action? Changed;
     public event Action<string>? Notice;
 
-    public ShareController(DeviceInfo local, PeerNetwork network, IInputPlatform platform, SettingsStore? store, string version)
+    public ShareController(DeviceInfo local, PeerNetwork network, IInputPlatform platform, SettingsStore? store, string version,
+        ISwitchEnvironment? environment = null)
     {
         this.network = network; this.platform = platform; this.store = store; this.version = version;
+        // Settings still apply in memory when a write fails.
+        saver = new BackgroundSaver(store, _ => Notice?.Invoke("Ayarlar diske kaydedilemedi; bu oturumda geçerli."));
         layout = LoadLayout();
         if (layout.PlaceMissing([local]) && layout.Revision == 0) layout.Author = local.Id;
-        var preferences = store?.Load(PreferencesFile, () => new SharePreferences()) ?? new SharePreferences();
-        engine = new SwitchEngine(local, layout) { Enabled = preferences.SwitchingEnabled };
+        var options = (store?.Load(PreferencesFile, () => new SwitchOptions()) ?? new SwitchOptions()).Sanitized();
+        engine = new SwitchEngine(local, layout) { Options = options, Environment = environment };
         injected = new InputState(platform.Inject);
         network.LinkUp += OnLinkUp;
         network.LinkDown += OnLinkDown;
@@ -62,6 +70,7 @@ public sealed class ShareController : IDisposable
     }
 
     public DeviceInfo Local { get { lock (gate) return engine.Local; } }
+    public SwitchOptions Options { get { lock (gate) return engine.Options; } }
 
     /// <summary>True while sharing or shortly after; updates must not restart the app then.</summary>
     public bool IsBusy
@@ -71,7 +80,7 @@ public sealed class ShareController : IDisposable
 
     // ---- Local hooks (input thread). Injected events never reach these methods. ----
 
-    public HookResult OnMouseMove(PointI pt, PointI cursor, bool localButtonsHeld)
+    public HookResult OnMouseMove(PointI pt, PointI cursor, bool localButtonsHeld, uint timeMs = 0)
     {
         HookResult result;
         lock (gate)
@@ -82,7 +91,7 @@ public sealed class ShareController : IDisposable
                 if (reclaimTravel >= ReclaimDistance) Reclaim();
                 result = HookResult.Pass;
             }
-            else result = engine.OnMouseMove(pt, cursor, localButtonsHeld, fx);
+            else result = engine.OnMouseMove(pt, cursor, localButtonsHeld, fx, timeMs);
             Flush();
         }
         AfterHook();
@@ -119,7 +128,8 @@ public sealed class ShareController : IDisposable
         lock (gate)
         {
             // This machine's own keyboard keeps working locally while a peer controls it.
-            result = controlledBy != null ? HookResult.Pass : engine.OnKey(vk, scan, extended, down, timeMs, fx);
+            if (controlledBy != null) { engine.TrackKey(vk, down); result = HookResult.Pass; }
+            else result = engine.OnKey(vk, scan, extended, down, timeMs, fx);
             Flush();
         }
         AfterHook();
@@ -154,18 +164,25 @@ public sealed class ShareController : IDisposable
         AfterHook();
     }
 
-    public void SetSwitchingEnabled(bool enabled)
+    public void SetSwitchingEnabled(bool enabled) => UpdateOptions(o => o with { SwitchingEnabled = enabled });
+
+    /// <summary>Applies a change to the current options atomically, so a hotkey toggle in between is not lost. Saves to disk.</summary>
+    public SwitchOptions UpdateOptions(Func<SwitchOptions, SwitchOptions> change)
     {
+        SwitchOptions next;
         lock (gate)
         {
-            engine.Enabled = enabled;
-            if (!enabled) engine.ForceLocal(fx);
+            next = change(engine.Options).Sanitized();
+            ApplyOptions(next);
             Flush();
-            try { store?.Save(PreferencesFile, new SharePreferences(enabled)); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Notice?.Invoke("Ayar bu oturumda değişti; diske kaydedilemedi."); }
         }
+        AfterHook();
         RaiseChanged();
+        return next;
     }
+
+    /// <summary>While the settings page records a hotkey, existing hotkeys must not fire.</summary>
+    public void SuspendHotkeys(bool suspended) { lock (gate) engine.HotkeysSuspended = suspended; }
 
     /// <summary>Drops a dragged device at <paramref name="proposed"/>, snapping to neighbours. Returns false if it would overlap.</summary>
     public bool MoveDevice(string deviceId, PointI proposed, int snapThreshold)
@@ -201,7 +218,7 @@ public sealed class ShareController : IDisposable
                 network.IsConnected(r.Id), r.Address, online.GetValueOrDefault(r.Id) ?? r.LastKnownDevice)).ToList();
             var discovered = network.Discovered.Where(d => !network.Directory.IsPaired(d.Id)).ToList();
             string? NameOf(string? id) => id == null ? null : peers.FirstOrDefault(p => p.Id == id)?.Name ?? "Diğer bilgisayar";
-            return new(engine.Local, peers, discovered, layout.Clone(), NameOf(engine.ActivePeer), NameOf(controlledBy), engine.Enabled, network.CurrentPairing);
+            return new(engine.Local, peers, discovered, layout.Clone(), NameOf(engine.ActivePeer), NameOf(controlledBy), engine.Options, network.CurrentPairing);
         }
     }
 
@@ -329,8 +346,63 @@ public sealed class ShareController : IDisposable
 
     private void ReleaseInjected()
     {
+        // The controller kept the key that finished its hotkey; a lone Alt release would open the menu bar here.
+        if (injected.IsKeyHeld(AltScan))
+            try { platform.MaskMenuKey(); } catch (Exception) { /* Cosmetic only. */ }
         try { injected.ReleaseAll(); }
         catch (Exception) { Notice?.Invoke("Bazı tuşlar bırakılamadı; basılı kalan tuşları fiziksel klavyede bırakın."); }
+    }
+
+    /// <summary>Takes effect at once; the file is written in the background.</summary>
+    private void ApplyOptions(SwitchOptions next)
+    {
+        var wasEnabled = engine.Options.SwitchingEnabled;
+        engine.Options = next;
+        if (wasEnabled && !next.SwitchingEnabled) engine.ForceLocal(fx);
+        saver.Schedule(PreferencesFile, next);
+    }
+
+    private void RunCommand(EngineEffect.Command command)
+    {
+        switch (command.Action)
+        {
+            case HotkeyAction.ToggleSwitching:
+            {
+                var next = engine.Options with { SwitchingEnabled = !engine.Options.SwitchingEnabled };
+                ApplyOptions(next);
+                pendingNotice = next.SwitchingEnabled ? "Kenardan geçiş açıldı." : "Kenardan geçiş kapatıldı.";
+                break;
+            }
+            case HotkeyAction.NextDevice:
+                engine.JumpToNext(fx);
+                break;
+            case HotkeyAction.ReturnHome:
+                engine.ForceLocal(fx);
+                break;
+            case HotkeyAction.JumpToMonitor:
+            {
+                var order = layout.ReadingOrder(KnownDevices());
+                if (command.Index >= order.Count) { pendingNotice = $"Düzende {(char)('A' + command.Index)} monitörü yok."; break; }
+                var (device, monitor) = order[command.Index];
+                if (!engine.JumpTo(device.Id, monitor.Center, fx)) pendingNotice = $"{device.Name} bağlı değil.";
+                break;
+            }
+        }
+        stateChanged = true;
+    }
+
+    private static string BlockedText(EngineEffect.Blocked b, SwitchKey key)
+    {
+        var text = b.Reason switch
+        {
+            BlockReason.Fullscreen => "Tam ekran uygulama öndeyken geçiş yapılmaz",
+            BlockReason.Maximized => "Büyütülmüş pencere öndeyken geçiş yapılmaz",
+            BlockReason.Program => "Bu program öndeyken geçiş yapılmaz",
+            BlockReason.Corner => "Ekran köşesinde geçiş yapılmaz",
+            BlockReason.Key => $"Geçmek için {key switch { SwitchKey.Shift => "Shift", SwitchKey.Ctrl => "Ctrl", _ => "sol Alt" }} tuşunu basılı tutun",
+            _ => "Geçmek için kenara iki kez dokunun"
+        };
+        return b.DoubleTapAllowed && b.Reason != BlockReason.DoubleTap ? text + " · kenara iki kez dokunarak geçebilirsiniz." : text + ".";
     }
 
     private void Flush()
@@ -350,16 +422,22 @@ public sealed class ShareController : IDisposable
                 case EngineEffect.Move m: network.Send(m.Peer, Frame.Input(new(EventKind.Move, m.Position.X, m.Position.Y))); break;
                 case EngineEffect.Leave l: network.Send(l.Peer, Frame.Empty(FrameType.Leave)); stateChanged = true; lastActivity = DateTimeOffset.UtcNow; break;
                 case EngineEffect.Forward f: network.Send(f.Peer, Frame.Input(f.Input)); break;
+                case EngineEffect.Command c: RunCommand(c); break;
+                case EngineEffect.MaskMenu:
+                    try { platform.MaskMenuKey(); } catch (Exception) { /* Cosmetic only. */ }
+                    break;
+                case EngineEffect.Blocked b: pendingNotice = BlockedText(b, engine.Options.RequiredKey); break;
             }
         }
         Flush();
     }
 
-    /// <summary>Raises Changed outside the lock, only when sharing state changed (not on every mouse move).</summary>
+    /// <summary>Raises events outside the lock: Changed only when sharing state changed (not on every mouse move).</summary>
     private void AfterHook()
     {
-        bool raise;
-        lock (gate) { raise = stateChanged; stateChanged = false; }
+        bool raise; string? notice;
+        lock (gate) { raise = stateChanged; stateChanged = false; notice = pendingNotice; pendingNotice = null; }
+        if (notice != null) Notice?.Invoke(notice);
         if (raise) RaiseChanged();
     }
 
@@ -390,15 +468,12 @@ public sealed class ShareController : IDisposable
         catch (InvalidDataException) { return new ScreenLayout(); }
     }
 
-    private void SaveLayout()
-    {
-        try { store?.Save(LayoutFile, layout); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* Layout still applies in memory. */ }
-    }
+    private void SaveLayout() => saver.Schedule(LayoutFile, layout.Clone());
 
     public void Dispose()
     {
         ReturnHome();
+        saver.WaitIdle(TimeSpan.FromSeconds(2));
         network.LinkUp -= OnLinkUp;
         network.LinkDown -= OnLinkDown;
         network.FrameReceived -= OnFrame;

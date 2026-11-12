@@ -1,10 +1,13 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Authentication;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using System.Windows.Threading;
@@ -27,6 +30,7 @@ public partial class MainWindow : Window
     private bool refreshQueued, updatingUi;
     // Null forces the first render, including the empty-list messages.
     private string? peersSignature, discoveredSignature;
+    private SwitchOptions? shownOptions;
     private (DateTimeOffset At, string Text) addresses = (DateTimeOffset.MinValue, "");
     private DateTimeOffset noticeUntil;
 
@@ -106,13 +110,13 @@ public partial class MainWindow : Window
         RefreshDiscovered(s);
         RefreshPairing(s.Pairing);
         RefreshLayout(s);
-        updatingUi = true; SwitchingBox.IsChecked = s.SwitchingEnabled; updatingUi = false;
+        if (!ReferenceEquals(s.Options, shownOptions)) ShowOptions(s.Options);
         var connected = s.Peers.Count(p => p.Connected);
         (StatusText.Text, StatusDot.Fill) = s switch
         {
             { ControllingName: { } name } => ($"Fare ve klavye şu an {name} bilgisayarında · geri dönmek için Esc Esc", Remote),
             { ControlledByName: { } name } => ($"{name} bu bilgisayarı kontrol ediyor · fareyi oynatarak geri alın", Remote),
-            { SwitchingEnabled: false } => ("Ekran kenarından geçiş kapalı", Idle),
+            { Options.SwitchingEnabled: false } => ("Ekran kenarından geçiş kapalı", Idle),
             _ when connected > 0 => ($"{connected} cihaz bağlı · imleci değen kenara iterek geçin", Accent),
             _ when s.Peers.Count > 0 => ("Eşleşmiş cihaz bekleniyor · iki bilgisayarda da Banko Share açık olmalı", Idle),
             _ => ("Henüz eşleşmiş cihaz yok", Idle)
@@ -257,9 +261,172 @@ public partial class MainWindow : Window
 
     // ---- Switching page ----
 
-    private void Switching_Changed(object sender, RoutedEventArgs e)
+    private void ShowOptions(SwitchOptions o)
     {
-        if (!updatingUi) host?.Controller.SetSwitchingEnabled(SwitchingBox.IsChecked == true);
+        shownOptions = o;
+        updatingUi = true;
+        SwitchingBox.IsChecked = o.SwitchingEnabled;
+        EqualizeBox.IsChecked = o.EqualizeEdges;
+        WrapBox.IsChecked = o.Wrap;
+        FullscreenBox.IsChecked = o.BlockFullscreen;
+        MaximizedBox.IsChecked = o.BlockMaximized;
+        CornersBox.IsChecked = o.BlockCorners;
+        (o.RequiredKey switch { SwitchKey.Shift => KeyShift, SwitchKey.Ctrl => KeyCtrl, SwitchKey.Alt => KeyAlt, _ => KeyNone }).IsChecked = true;
+        (o.DoubleTap switch { DoubleTapMode.OverrideBlocks => TapOverride, DoubleTapMode.Always => TapAlways, _ => TapOff }).IsChecked = true;
+        (o.JumpMods switch { KeyMods.Ctrl | KeyMods.Alt => JumpCtrlAlt, KeyMods.Ctrl | KeyMods.Shift => JumpCtrlShift, _ => JumpOff }).IsChecked = true;
+        // Never overwrite what the user is typing or recording.
+        if (!ProgramsBox.IsKeyboardFocusWithin) ProgramsBox.Text = string.Join(", ", o.BlockedPrograms.Select(p => p + ".exe"));
+        foreach (var box in (TextBox[])[ToggleHotkeyBox, NextHotkeyBox, HomeHotkeyBox])
+            if (!box.IsKeyboardFocusWithin) box.Text = HotkeyText.Describe(HotkeyOf(o, box));
+        updatingUi = false;
+    }
+
+    /// <summary>Each control changes only its own field, so a hotkey toggle made meanwhile is kept.</summary>
+    private void Option_Changed(object sender, RoutedEventArgs e)
+    {
+        if (updatingUi || host == null) return;
+        static bool On(CheckBox box) => box.IsChecked == true;
+        host.Controller.UpdateOptions(o =>
+            sender == SwitchingBox ? o with { SwitchingEnabled = On(SwitchingBox) }
+            : sender == EqualizeBox ? o with { EqualizeEdges = On(EqualizeBox) }
+            : sender == WrapBox ? o with { Wrap = On(WrapBox) }
+            : sender == FullscreenBox ? o with { BlockFullscreen = On(FullscreenBox) }
+            : sender == MaximizedBox ? o with { BlockMaximized = On(MaximizedBox) }
+            : sender == CornersBox ? o with { BlockCorners = On(CornersBox) }
+            : sender == KeyNone ? o with { RequiredKey = SwitchKey.None }
+            : sender == KeyShift ? o with { RequiredKey = SwitchKey.Shift }
+            : sender == KeyCtrl ? o with { RequiredKey = SwitchKey.Ctrl }
+            : sender == KeyAlt ? o with { RequiredKey = SwitchKey.Alt }
+            : sender == TapOff ? o with { DoubleTap = DoubleTapMode.Off }
+            : sender == TapOverride ? o with { DoubleTap = DoubleTapMode.OverrideBlocks }
+            : sender == TapAlways ? o with { DoubleTap = DoubleTapMode.Always }
+            : sender == JumpOff ? o with { JumpMods = KeyMods.None }
+            : sender == JumpCtrlAlt ? o with { JumpMods = KeyMods.Ctrl | KeyMods.Alt }
+            : sender == JumpCtrlShift ? o with { JumpMods = KeyMods.Ctrl | KeyMods.Shift }
+            : o);
+        if (sender == JumpCtrlAlt || sender == JumpCtrlShift) CheckHotkeyConflicts();
+    }
+
+    private void ApplyPrograms()
+    {
+        if (host == null) return;
+        var list = SwitchOptions.NormalizePrograms(ProgramsBox.Text.Split([',', ';', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries));
+        var applied = list.SequenceEqual(host.Controller.Options.BlockedPrograms)
+            ? host.Controller.Options
+            : host.Controller.UpdateOptions(o => o with { BlockedPrograms = list });
+        ProgramsBox.Text = string.Join(", ", applied.BlockedPrograms.Select(p => p + ".exe"));
+    }
+
+    private void Programs_LostFocus(object sender, KeyboardFocusChangedEventArgs e) => ApplyPrograms();
+
+    private void Programs_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        ApplyPrograms();
+        e.Handled = true;
+    }
+
+    private void AddProgram_Click(object sender, RoutedEventArgs e)
+    {
+        var menu = new ContextMenu { PlacementTarget = AddProgramButton, Placement = PlacementMode.Bottom };
+        var blocked = host?.Controller.Options.BlockedPrograms ?? [];
+        foreach (var (name, title) in RunningPrograms())
+        {
+            // A TextBlock header keeps underscores in names from turning into access keys.
+            var item = new MenuItem { Header = new TextBlock { Text = $"{name}.exe  ·  {title}", MaxWidth = 460, TextTrimming = TextTrimming.CharacterEllipsis }, IsEnabled = !blocked.Contains(name) };
+            item.Click += (_, _) =>
+            {
+                var applied = host?.Controller.UpdateOptions(o => o with { BlockedPrograms = [.. o.BlockedPrograms, name] });
+                if (applied != null) ProgramsBox.Text = string.Join(", ", applied.BlockedPrograms.Select(p => p + ".exe"));
+            };
+            menu.Items.Add(item);
+        }
+        if (menu.Items.Count == 0) menu.Items.Add(new MenuItem { Header = "Pencereli program bulunamadı", IsEnabled = false });
+        menu.IsOpen = true;
+    }
+
+    /// <summary>Processes with a titled main window, other than this one, by executable name.</summary>
+    private static List<(string Name, string Title)> RunningPrograms()
+    {
+        List<(string Name, string Title)> found = [];
+        foreach (var process in Process.GetProcesses())
+            using (process)
+                try
+                {
+                    if (process.Id == Environment.ProcessId || process.MainWindowHandle == 0 || string.IsNullOrWhiteSpace(process.MainWindowTitle)) continue;
+                    found.Add((SwitchOptions.NormalizeProgram(process.ProcessName), process.MainWindowTitle.Trim()));
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or Win32Exception or NotSupportedException) { /* Exited meanwhile or inaccessible. */ }
+        return [.. found.Where(p => p.Name.Length > 0).GroupBy(p => p.Name).Select(g => g.First()).OrderBy(p => p.Name, StringComparer.Ordinal)];
+    }
+
+    // ---- Hotkey recording ----
+
+    private static Hotkey? HotkeyOf(SwitchOptions o, TextBox box) => (string)box.Tag switch
+    {
+        "Toggle" => o.ToggleHotkey,
+        "Next" => o.NextDeviceHotkey,
+        _ => o.HomeHotkey
+    };
+
+    private void Hotkey_GotFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        host?.Controller.SuspendHotkeys(true);
+        ((TextBox)sender).Text = "Tuş birleşimine basın…";
+    }
+
+    private void Hotkey_LostFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        host?.Controller.SuspendHotkeys(false);
+        if (host != null) ((TextBox)sender).Text = HotkeyText.Describe(HotkeyOf(host.Controller.Options, (TextBox)sender));
+    }
+
+    private void Hotkey_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        var box = (TextBox)sender;
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (key == Key.Tab && Keyboard.Modifiers == ModifierKeys.None) return; // normal focus navigation
+        e.Handled = true;
+        if (host == null) return;
+        if (key == Key.Escape && Keyboard.Modifiers == ModifierKeys.None) { Keyboard.ClearFocus(); return; }
+        if (key is Key.Delete or Key.Back) { SaveHotkey(box, null); return; }
+        // Same rule as the hook: only the left Alt counts, and AltGr's synthetic Ctrl does not.
+        var mods = VirtualKeys.ModsFrom(vk => Keyboard.IsKeyDown(KeyInterop.KeyFromVirtualKey(vk)));
+        var vk = KeyInterop.VirtualKeyFromKey(key);
+        if (VirtualKeys.IsModifier(vk)) { box.Text = mods == KeyMods.None ? "Tuş birleşimine basın…" : HotkeyText.Mods(mods) + " + …"; return; }
+        var hotkey = new Hotkey(mods, vk);
+        if (!hotkey.IsValid) { box.Text = "En az iki değiştirici: Ctrl, sol Alt, Shift"; return; }
+        SaveHotkey(box, hotkey);
+    }
+
+    private void SaveHotkey(TextBox box, Hotkey? hotkey)
+    {
+        var tag = (string)box.Tag;
+        var o = host!.Controller.Options;
+        TextBox[] others = [.. ((TextBox[])[ToggleHotkeyBox, NextHotkeyBox, HomeHotkeyBox]).Where(b => b != box)];
+        if (hotkey != null && (others.Any(b => HotkeyOf(o, b) == hotkey) || o.JumpMods != KeyMods.None && hotkey.Mods == o.JumpMods && VirtualKeys.DigitIndex(hotkey.Vk) >= 0))
+        {
+            box.Text = "Bu birleşim başka bir kısayolda kullanılıyor";
+            return;
+        }
+        host.Controller.UpdateOptions(x => tag switch
+        {
+            "Toggle" => x with { ToggleHotkey = hotkey },
+            "Next" => x with { NextDeviceHotkey = hotkey },
+            _ => x with { HomeHotkey = hotkey }
+        });
+        Keyboard.ClearFocus(); // recording ends; the new hotkey works right away
+        CheckHotkeyConflicts();
+    }
+
+    /// <summary>Warns when a recorded hotkey is also one of the jump combinations.</summary>
+    private void CheckHotkeyConflicts()
+    {
+        var o = host?.Controller.Options;
+        var clash = o != null && o.JumpMods != KeyMods.None && ((Hotkey?[])[o.ToggleHotkey, o.NextDeviceHotkey, o.HomeHotkey])
+            .Any(h => h != null && h.Mods == o.JumpMods && VirtualKeys.DigitIndex(h.Vk) >= 0);
+        HotkeyStatusText.Text = clash ? "Bir kısayol, monitöre atlama birleşimiyle çakışıyor; çakışan kısayol önceliklidir." : "";
+        HotkeyStatusText.Visibility = clash ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void Nav_Checked(object sender, RoutedEventArgs e)

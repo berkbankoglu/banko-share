@@ -90,6 +90,18 @@ public sealed class ScreenLayout
         return false;
     }
 
+    /// <summary>
+    /// Every placed monitor in reading order on the desk (top to bottom, then left to right). Index 0 is
+    /// monitor A in the layout editor and digit 1 for the jump hotkeys. Monitors keep device-local bounds.
+    /// </summary>
+    public List<(DeviceInfo Device, RectI Monitor)> ReadingOrder(IEnumerable<DeviceInfo> devices) =>
+    [
+        .. devices.Where(d => Offsets.ContainsKey(d.Id))
+            .SelectMany(d => d.Monitors.Select(m => (Device: d, Monitor: m.Bounds, At: m.Bounds.Offset(OffsetOf(d.Id)))))
+            .OrderBy(x => x.At.Top).ThenBy(x => x.At.Left).ThenBy(x => x.Device.Id, StringComparer.Ordinal)
+            .Select(x => (x.Device, x.Monitor))
+    ];
+
     /// <summary>True when at least one monitor of the device shares an edge with another device's monitor.</summary>
     public bool IsConnected(DeviceInfo device, IEnumerable<DeviceInfo> devices)
     {

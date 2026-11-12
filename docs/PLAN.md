@@ -14,7 +14,7 @@ Kurulum örneği (geliştirme ortamı):
           BANKOARTS (3 monitör)
 ```
 
-## Aşama 1 — Fare geçişi (şimdi)
+## Aşama 1 — Fare geçişi (v0.3.0, iki bilgisayarda sınanıyor)
 
 Eski F12 ile elle açılan alıcı/gönderici modeli kalkar. Her bilgisayar aynı uygulamayı çalıştırır, hem kontrol eden hem kontrol edilen olabilir.
 
@@ -41,13 +41,31 @@ Eski F12 ile elle açılan alıcı/gönderici modeli kalkar. Her bilgisayar ayn�
 
 **Kabul ölçütü:** İki bilgisayarda A↔C geçişi her yönde çalışmalı. 30 dakikalık kullanımda takılı tuş, kayıp tık, sıçrama veya kontrol kaybı olmamalı.
 
-## Aşama 2 — Geçiş ayarları
+## Aşama 2 — Geçiş ayarları (master'da, henüz yayımlanmadı)
 
-- Ekran boyutlarını eşitle: kenar boyunca orantılı geçiş.
-- İmleci ekranların etrafında döndür.
-- Geçişi engelleme koşulları: tam ekran veya büyütülmüş pencerelerde, ekran köşelerinde, seçilen bir tuş basılı değilken, belirli programlarda.
-- Kenara çift dokunarak engeli aşma.
-- Kısayollar: belirli bir monitöre atla, düzen değiştir, paylaşımı aç/kapat.
+Hepsi varsayılan olarak kapalıdır; açılmadıkça 0.3.0 davranışı değişmez. Ayarlar her bilgisayarda ayrıdır ve o bilgisayarın faresi kullanılırken geçerlidir.
+
+- **Ekran boyutlarını eşitle:** Kaynak monitörün kenarının tamamı, ona değen monitörlerin toplam kenarına orantılı eşlenir. Gidiş ve dönüş aynı noktaya düşer.
+- **İmleci ekranların etrafında döndür:** Dış kenardan çıkan imleç, aynı satırın veya sütunun öbür ucundan girer. Bu, tek bilgisayarın kendi monitörleri arasında da çalışır.
+- **Geçişi engelleme koşulları:**
+  - Tam ekran uygulama veya büyütülmüş pencere öndeyken. Yalnızca imlecin çıktığı monitördeki pencere sayılır.
+  - Ekran köşelerinde (96 DPI'da 40 piksel, DPI'ya göre ölçeklenir).
+  - Shift, Ctrl veya sol Alt basılı değilken.
+  - Listedeki programlar öndeyken.
+  - Pencere koşulları bu bilgisayardan çıkarken denetlenir. Köşe, tuş ve çift dokunma kuralları her yönde geçerlidir.
+- **Kenara çift dokunma:**
+  - Engel varken iki dokunuşla geçilir. İsteğe bağlı olarak her geçiş iki dokunuş ister.
+  - İki dokunuş arasında en fazla 500 ms olabilir.
+  - İmleç kenardan en az 6 piksel geri çekilmelidir; kenar boyunca kaymak dokunuş sayılmaz.
+- **Engel bildirimi:** Engellenen her itişte durum çubuğu nedenini yazar.
+- **Kısayollar:**
+  - Kenardan geçişi aç/kapat, sonraki bilgisayara geç ve bu bilgisayara dön kısayolları kullanıcı tarafından kaydedilir.
+  - Ctrl + sol Alt + rakam veya Ctrl + Shift + rakam ile A–I monitörlerine atlanır. Harfler düzen ekranındakilerle aynıdır.
+  - Kısayolda en az iki değiştirici tuş bulunur. AltGr sayılmaz; Türkçe Q'da @, #, {, [ gibi karakterler etkilenmez.
+  - Alt ile tetiklenen kısayoldan sonra pencerenin menü çubuğu açılmaz.
+  - Planlanan "düzen değiştir" kısayolunun yerini "sonraki bilgisayar" aldı. Birden fazla kayıtlı düzen ileride gerekirse ayrıca ele alınacak.
+
+**Kabul ölçütü:** [TESTING.md](TESTING.md) içindeki Aşama 2 tablosu iki bilgisayarda geçmeli.
 
 ## Aşama 3 — Çıkış ayarları
 
