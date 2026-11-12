@@ -74,6 +74,7 @@ public partial class MainWindow : Window
             host.Controller.Notice += message => Dispatcher.BeginInvoke(() => ShowNotice(message));
             host.Network.Paired += _ => Dispatcher.BeginInvoke(() => { ShowNotice("Yeni cihaz eşleştirildi."); NavLayout.IsChecked = true; });
             Editor.DeviceDropped += OnDeviceDropped;
+            host.Games.Changed += _ => Dispatcher.BeginInvoke(ApplyGameMode);
             if (host.Warning != null) { WarningText.Text = host.Warning; WarningText.Visibility = Visibility.Visible; }
         }
         // A second launch (Start menu, desktop shortcut) brings this window back instead of starting another copy.
@@ -83,7 +84,7 @@ public partial class MainWindow : Window
         updates.RestartHidden = () => !IsVisible;
         updates.RestartPending = pending => tray.Visible = !pending;
         updatePoll.Tick += async (_, _) => { if (updater.Automatic) await updater.CheckAsync(lifetime.Token); };
-        tick.Tick += (_, _) => { updater.Tick(DateTimeOffset.Now, Busy); RefreshUpdates(); Refresh(); };
+        tick.Tick += (_, _) => { ApplyGameMode(); updater.Tick(DateTimeOffset.Now, Busy); RefreshUpdates(); Refresh(); };
         // Not ContentRendered: when Windows starts us in the tray the window is never rendered.
         Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, async () =>
         {
@@ -191,6 +192,20 @@ public partial class MainWindow : Window
 
     private void Exit_Click(object sender, RoutedEventArgs e) => ExitApplication();
 
+    /// <summary>Steps aside while a Riot Vanguard–protected game runs here, and comes back when it closes.</summary>
+    private void ApplyGameMode()
+    {
+        if (host == null || disposed) return;
+        var game = host.Games.Active;
+        GameStateText.Text = game ? "Şu an bir Riot oyunu açık." : "";
+        var pause = game && host.Controller.Options.PauseForProtectedGames;
+        if (pause == host.Suspended) return;
+        try { host.SetSuspended(pause); }
+        catch (Exception e) when (e is Win32Exception or InvalidOperationException) { ShowNotice("Fare kancası yeniden kurulamadı: " + e.Message); return; }
+        ShowNotice(pause ? "Riot oyunu açık: Banko Share bu bilgisayarda duraklatıldı." : "Oyun kapandı: paylaşım yeniden açık.");
+        Refresh();
+    }
+
     // ---- Refresh ----
 
     private void QueueRefresh()
@@ -228,6 +243,7 @@ public partial class MainWindow : Window
         var connected = s.Peers.Count(p => p.Connected);
         (StatusText.Text, StatusDot.Fill) = s switch
         {
+            { Paused: true } => ("Oyun modu · Riot oyunu açık; bu bilgisayarda fare ve klavye paylaşımı duraklatıldı", Idle),
             { ControllingName: { } name } => ($"Fare ve klavye şu an {name} bilgisayarında · geri dönmek için Esc Esc", Sharing),
             { ControlledByName: { } name } => ($"{name} bu bilgisayarı kontrol ediyor · fareyi oynatarak geri alın", Sharing),
             { Options.SwitchingEnabled: false } => ("Ekran kenarından geçiş kapalı", Idle),
@@ -235,9 +251,10 @@ public partial class MainWindow : Window
             _ when s.Peers.Count > 0 => ("Eşleşmiş cihaz bekleniyor · iki bilgisayarda da Banko Share açık olmalı", Idle),
             _ => ("Henüz eşleşmiş cihaz yok", Idle)
         };
-        var trayState = s.ControllingName != null || s.ControlledByName != null ? TrayState.Sharing : connected > 0 ? TrayState.Connected : TrayState.Idle;
+        var trayState = s.Paused ? TrayState.Idle : s.ControllingName != null || s.ControlledByName != null ? TrayState.Sharing : connected > 0 ? TrayState.Connected : TrayState.Idle;
         var trayText = s switch
         {
+            { Paused: true } => "Banko Share · oyun modu (Riot oyunu açık)",
             { ControllingName: { } name } => $"Banko Share · fare {name} bilgisayarında",
             { ControlledByName: { } name } => $"Banko Share · {name} kontrol ediyor",
             _ when connected > 0 => $"Banko Share · {string.Join(", ", s.Peers.Where(p => p.Connected).Select(p => p.Name))} bağlı",
@@ -248,7 +265,7 @@ public partial class MainWindow : Window
 
     private void RefreshPeers(ShareSnapshot s)
     {
-        var signature = string.Join("|", s.Peers.Select(p => $"{p.Id}:{p.Name}:{p.Connected}:{p.Address}"));
+        var signature = string.Join("|", s.Peers.Select(p => $"{p.Id}:{p.Name}:{p.Connected}:{p.Paused}:{p.Address}"));
         if (signature == peersSignature) return;
         peersSignature = signature;
         PeersPanel.Children.Clear();
@@ -267,7 +284,7 @@ public partial class MainWindow : Window
             row.Children.Add(new Ellipse { Width = 9, Height = 9, Fill = p.Connected ? Connected : Idle, Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center });
             var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             text.Children.Add(new TextBlock { Text = p.Name, FontWeight = FontWeights.SemiBold });
-            text.Children.Add(new TextBlock { Text = (p.Connected ? "Bağlı" : "Bağlı değil") + (p.Address != null ? " · " + p.Address : ""), Foreground = Muted, FontSize = 12 });
+            text.Children.Add(new TextBlock { Text = (p.Connected ? p.Paused ? "Bağlı · oyun modunda, geçiş duraklatıldı" : "Bağlı" : "Bağlı değil") + (p.Address != null ? " · " + p.Address : ""), Foreground = Muted, FontSize = 12 });
             row.Children.Add(text);
             PeersPanel.Children.Add(row);
         }
@@ -401,6 +418,7 @@ public partial class MainWindow : Window
         FullscreenBox.IsChecked = o.BlockFullscreen;
         MaximizedBox.IsChecked = o.BlockMaximized;
         CornersBox.IsChecked = o.BlockCorners;
+        GamesBox.IsChecked = o.PauseForProtectedGames;
         (o.RequiredKey switch { SwitchKey.Shift => KeyShift, SwitchKey.Ctrl => KeyCtrl, SwitchKey.Alt => KeyAlt, _ => KeyNone }).IsChecked = true;
         (o.DoubleTap switch { DoubleTapMode.OverrideBlocks => TapOverride, DoubleTapMode.Always => TapAlways, _ => TapOff }).IsChecked = true;
         (o.JumpMods switch { KeyMods.Ctrl | KeyMods.Alt => JumpCtrlAlt, KeyMods.Ctrl | KeyMods.Shift => JumpCtrlShift, _ => JumpOff }).IsChecked = true;
@@ -423,6 +441,7 @@ public partial class MainWindow : Window
             : sender == FullscreenBox ? o with { BlockFullscreen = On(FullscreenBox) }
             : sender == MaximizedBox ? o with { BlockMaximized = On(MaximizedBox) }
             : sender == CornersBox ? o with { BlockCorners = On(CornersBox) }
+            : sender == GamesBox ? o with { PauseForProtectedGames = On(GamesBox) }
             : sender == KeyNone ? o with { RequiredKey = SwitchKey.None }
             : sender == KeyShift ? o with { RequiredKey = SwitchKey.Shift }
             : sender == KeyCtrl ? o with { RequiredKey = SwitchKey.Ctrl }
@@ -435,6 +454,7 @@ public partial class MainWindow : Window
             : sender == JumpCtrlShift ? o with { JumpMods = KeyMods.Ctrl | KeyMods.Shift }
             : o);
         if (sender == JumpCtrlAlt || sender == JumpCtrlShift) CheckHotkeyConflicts();
+        if (sender == GamesBox) ApplyGameMode();
     }
 
     private void ApplyPrograms()

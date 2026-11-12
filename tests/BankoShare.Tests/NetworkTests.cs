@@ -163,6 +163,31 @@ internal static class NetworkTests
             T.Check(returned, "The hook waited for SendInput, which waits for the hook: Windows would time it out and drop the hook");
             T.Check(pair.B.Controller.Snapshot().ControlledByName != null, "A 1-pixel nudge took control back");
         });
+        await s.TestAsync("Game mode: a paused machine sends the pointer back, refuses control and injects nothing until it resumes", async () =>
+        {
+            using var pair = await ControllerPair.Create();
+            pair.Arrange();
+            await T.Eventually(() => pair.B.Controller.Snapshot().Layout.SameArrangement(pair.A.Controller.Snapshot().Layout), "layout synced");
+            var a = pair.A.Controller; var b = pair.B.Controller;
+            a.OnMouseMove(new(1000, -6), new(1000, 0), false);
+            a.OnKey(0xA0, 42, false, true, 0); // Shift held on DESKTOP when its game starts
+            await T.Eventually(() => pair.B.Platform.Injected.Contains(new(EventKind.Key, 42, 1)), "session running");
+            b.SetPaused(true);
+            await T.Eventually(() => a.Snapshot().ControllingName == null, "pointer sent home");
+            await T.Eventually(() => a.Snapshot().Peers.Single().Paused, "controller sees the pause");
+            T.Check(b.WaitForInput(TimeSpan.FromSeconds(2)) && pair.B.Platform.Injected.Contains(new(EventKind.Key, 42, 0)), "Held key not released");
+            var injectedBefore = pair.B.Platform.Injected.Length;
+            T.Equal(HookResult.Pass, a.OnMouseMove(new(1000, -7), new(1000, 0), false), "Switched into a paused machine");
+            // An older peer that ignores the flag still gets nowhere.
+            pair.A.Network.Send(pair.B.Id, Frame.Enter(new(500, 500)));
+            pair.A.Network.Send(pair.B.Id, Frame.Input(new(EventKind.Key, 30, 1)));
+            await Task.Delay(300);
+            T.Check(b.WaitForInput(TimeSpan.FromSeconds(2)) && pair.B.Platform.Injected.Length == injectedBefore, "Input injected while paused");
+            T.Check(b.Snapshot() is { Paused: true, ControlledByName: null }, "Paused machine accepted control");
+            b.SetPaused(false);
+            await T.Eventually(() => !a.Snapshot().Peers.Single().Paused, "resume announced");
+            T.Equal(HookResult.Block, a.OnMouseMove(new(1000, -8), new(1000, 0), false), "Switching after the game closed");
+        });
         await s.TestAsync("Losing the peer mid-session brings the pointer home", async () =>
         {
             using var pair = await ControllerPair.Create();

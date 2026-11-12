@@ -32,6 +32,11 @@ Eşleştirme kalıcıdır. Sonraki açılışlarda iki uygulama birbirini bulup 
   - Simgeye tıklayınca pencere açılır.
   - Sağ tık menüsünde kenardan geçiş, bu bilgisayara dönme, Windows ile başlatma ve **Çıkış** vardır.
   - Kurulu sürüm Windows açılınca bildirim alanında başlar. Bu, **Uygulama** sayfasından kapatılabilir.
+- **Oyun modu:** Riot Vanguard korumalı bir oyun (VALORANT, League of Legends) açıkken Banko Share o bilgisayarda kenara çekilir. Oyun kapanınca kendiliğinden devam eder. Bu sürede:
+  - fare ve klavye kancaları kaldırılır,
+  - hiçbir giriş gönderilmez,
+  - diğer bilgisayar oraya geçemez,
+  - oyunun sürecine dokunulmaz.
 - **Kenardan geçişi kapatma:** **Geçiş ayarları** sayfasından veya bildirim alanı menüsünden yapılır. Kısayollar yine çalışır.
 - **Geçiş ayarları** (hepsi varsayılan olarak kapalı):
   - Ekran boyutlarını eşitleme: kenarın her yerinden orantılı geçiş.
@@ -54,7 +59,8 @@ Eşleştirme kalıcıdır. Sonraki açılışlarda iki uygulama birbirini bulup 
   - Ağdaki bir saldırgan kodu bilgisayarında deneme-yanılmayla çözemez. Her bağlantı denemesi tek bir tahmine izin verir ve 5 denemede kod iptal olur.
 - Ağda bulma UDP 24820 yayınıyla yapılır. Bu yalnızca adres ipucudur; güven her zaman sabitlenmiş sertifikadan gelir. Bağlantılar TCP 24819 üzerindendir.
 - Her bağlantıda 0,5 sn'de bir kalp atışı gider; 3 sn sessizlik bağlantıyı kapatır. Kopan bağlantılar artan bekleme süreleriyle yeniden kurulur.
-- Hesap, bulut sunucusu, telemetri veya tuş kaydı yoktur.
+- Hesap, bulut sunucusu, telemetri veya tuş kaydı yoktur. Sürücü kurulmaz; her şey kullanıcı düzeyinde çalışır.
+- Başka programların süreçleri açılmaz. Program adları Windows'un süreç listesinden okunur; Riot oyunu Vanguard'ın `vgc` hizmetinin durumuna bakılarak anlaşılır. Hile önleme sürücüleri, başka programların oyun süreçlerini açmasını izler.
 - Windows ile başlatma, kullanıcıya ait `HKCU\…\Run` kaydıyla yapılır ve yalnızca Setup ile kurulan sürüm için açılır.
 - Ayarlar `%LocalAppData%\BankoShare.Settings` içinde tutulur: eşleşen cihazlar, düzen, tercihler ve açık sertifika. Dosyalar arka planda, geçici dosya üzerinden atomik olarak yazılır. Virüs tarayıcısı dosyayı kısa süre tutarsa yazma yeniden denenir. Fare kancası diske hiç beklemez.
 

@@ -343,6 +343,12 @@
      <TextBlock Style="{StaticResource Note}" FontSize="12" Text="Çıkınca paylaşım durur; diğer bilgisayar bu bilgisayara geçemez."/>
     </StackPanel></Border>
     <Border Style="{StaticResource Card}"><StackPanel>
+     <TextBlock Text="Oyunlar ve hile önleme" Style="{StaticResource Heading}"/>
+     <CheckBox x:Name="GamesBox" Content="Riot oyunu açıkken bu bilgisayarda paylaşımı duraklat (önerilir)" Margin="0,12,0,0" Checked="Option_Changed" Unchecked="Option_Changed"/>
+     <TextBlock Style="{StaticResource Note}" Margin="28,4,0,0" Text="VALORANT veya League of Legends açıkken (Riot Vanguard'ın oyun hizmeti çalışırken) Banko Share bu bilgisayarda fare ve klavye kancalarını kaldırır, hiçbir giriş göndermez ve diğer bilgisayara buraya geçmemesini bildirir. Oyunun sürecine hiç dokunmaz. Oyun kapanınca kendiliğinden devam eder."/>
+     <TextBlock x:Name="GameStateText" Style="{StaticResource Note}" Margin="28,6,0,0" Foreground="{StaticResource Green}"/>
+    </StackPanel></Border>
+    <Border Style="{StaticResource Card}"><StackPanel>
      <DockPanel><TextBlock Text="Güncellemeler" Style="{StaticResource Heading}"/><TextBlock x:Name="UpdateVersionText" HorizontalAlignment="Right" Foreground="{StaticResource Green}"/></DockPanel>
      <TextBlock x:Name="UpdateStatus" Text="Güncelleme kontrolü bekleniyor." TextWrapping="Wrap" Margin="0,8,0,0"/>
      <TextBlock x:Name="LastCheckText" Foreground="{StaticResource TextMuted}" FontSize="12" Margin="0,4,0,10"/>

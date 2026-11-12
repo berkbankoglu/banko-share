@@ -75,6 +75,11 @@ public sealed record SwitchOptions
     public Hotkey? HomeHotkey { get; init; }
     /// <summary>Modifiers that, with a digit 1–9, jump to monitor A–I. None turns it off.</summary>
     public KeyMods JumpMods { get; init; }
+    /// <summary>
+    /// While a Riot Vanguard–protected game runs on this machine, remove the input hooks, inject nothing and tell
+    /// peers not to switch here. On by default; input tools must stay out of anti-cheat-protected games.
+    /// </summary>
+    public bool PauseForProtectedGames { get; init; } = true;
 
     /// <summary>Settings come from disk and the UI: drop anything out of range rather than fail.</summary>
     public SwitchOptions Sanitized() => this with

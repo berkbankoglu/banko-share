@@ -1,5 +1,38 @@
 # Doğrulama kayıtları ve kabul testleri
 
+## BANKOARTS çökmesi ve oyun modu — 12.11.2026, v0.4.2
+
+**Olay:**
+
+- Ne yapılıyordu: DESKTOP uykuya alındı. İki bilgisayarda da Banko Share 0.4.1 bildirim alanındaydı.
+- Ne oldu: BANKOARTS 09:33'te hoparlörden kesintisiz bir ses verip yeniden başladı. Anakarttaki sarı ışık yandı (bu kartta DRAM uyarısı).
+- Kayıt: Mavi ekran `0x1E KMODE_EXCEPTION_NOT_HANDLED (c0000005)`. Windows'a göre sorumlu sürücü `vgk.sys` (Riot Vanguard).
+
+**Geçmiş:**
+
+- Aynı sürücü 18.09.2026 ve 06.10.2026'da da mavi ekrana yol açmış (`0x7E`, ikisinde de aynı adres). Bu iki çökme Banko Share'den öncedir. 15.10.2026'da da nedeni kaydedilmemiş bir ani kapanma var.
+- Donanım: i7-13700K (13. nesil; vgk.sys çökmelerinde sık geçen işlemci ailesi), mikrokod `0x12F`, ProArt B760-CREATOR D4 (BIOS 3001), 4×16 GB DDR4-3200 XMP.
+
+**Değerlendirme:**
+
+- Çökme Vanguard'ın çekirdek sürücüsünde oldu. Banko Share sürücü kurmaz ve tek başına çekirdeği çökertemez.
+- Vanguard'ın fare kancası ve yapay giriş kullanan programları izlemesi nedeniyle tetikleme olasılığı tamamen dışlanamaz. Döküm dosyası yönetici izni gerektirdiği için incelenmedi.
+- Bu sürüm, olası etkileşimi en aza indirmek için oyun modunu getiriyor.
+
+**Oyun modu doğrulaması:**
+
+- **Yeni test** (loopback TLS, iki denetleyici):
+  - Oturum sürerken duraklatılan makine imleci geri yollar ve basılı tuşları bırakır.
+  - Karşı taraf "oyun modunda" görür ve oraya geçemez.
+  - Bayrağı tanımayan eski bir eşin "gir" ve tuş çerçeveleri hiçbir giriş üretmez.
+  - Devam edince geçiş yeniden çalışır.
+- **Protokol testi:** 0.4.0'ın bayraksız Hello mesajı "duraklatılmamış" olarak okunur.
+- **Gerçek uygulama:** Test kopyası, oyun yerine zararsız bir yedek süreçle denendi. Riot oyunu adı taşıyan sahte bir süreç bilerek kullanılmadı.
+  - Yedek süreç açılınca giriş kancası iş parçacığı ve imleç penceresi kalktı; durum "Oyun modu" oldu.
+  - Süreç kapanınca kancalar geri geldi.
+  - Vanguard'ın `vgc` hizmeti kapalıyken mod yanlışlıkla açılmadı.
+- 56 test üç ardışık çalıştırmada geçti.
+
 ## Kontrol edilen bilgisayarda donma — 12.11.2026, v0.4.1
 
 **Bildirim (iki bilgisayarda, 0.4.0):** DESKTOP'a geçip oradaki Banko Share penceresini sürüklemek veya küçültmek imleci donduruyordu. Kurtulmak için DESKTOP'un kendi faresiyle tıklamak gerekiyordu.

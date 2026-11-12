@@ -55,9 +55,6 @@ internal static class Native
     [DllImport("user32.dll")] internal static extern nint MonitorFromWindow(nint hwnd, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern int GetClassName(nint hwnd, char[] name, int max);
     [DllImport("user32.dll")] internal static extern uint GetWindowThreadProcessId(nint hwnd, out uint processId);
-    [DllImport("kernel32.dll")] internal static extern nint OpenProcess(uint access, bool inherit, uint processId);
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] internal static extern bool QueryFullProcessImageName(nint process, uint flags, char[] name, ref int size);
-    [DllImport("kernel32.dll")] internal static extern bool CloseHandle(nint handle);
     [DllImport("user32.dll")] internal static extern uint MapVirtualKey(uint code, uint type);
 }
 
@@ -149,7 +146,7 @@ internal sealed class WindowsPlatform(MonitorInfo[] monitors) : IInputPlatform
 /// Foreground-window and key-state queries for the switch engine. Runs on the input thread, at most once per
 /// push against an edge, so it stays a handful of quick user32 calls.
 /// </summary>
-internal sealed class WindowsEnvironment : ISwitchEnvironment
+internal sealed class WindowsEnvironment(Func<int, string?> processName) : ISwitchEnvironment
 {
     private static readonly HashSet<string> ShellClasses = ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"];
     private readonly char[] buffer = new char[1024];
@@ -182,18 +179,14 @@ internal sealed class WindowsEnvironment : ISwitchEnvironment
         return length > 0 && ShellClasses.Contains(new string(buffer, 0, length));
     }
 
-    /// <summary>Executable name of the window's process, normalised like the user's list. Works for elevated processes too.</summary>
+    /// <summary>
+    /// Executable name of the window's process, from the system process snapshot. No handle to the process is
+    /// opened: anti-cheat drivers watch for other programs opening game processes.
+    /// </summary>
     private string? ProcessName(nint hwnd)
     {
         Native.GetWindowThreadProcessId(hwnd, out var pid);
-        var process = pid == 0 ? 0 : Native.OpenProcess(0x1000, false, pid); // PROCESS_QUERY_LIMITED_INFORMATION
-        if (process == 0) return null;
-        try
-        {
-            var size = buffer.Length;
-            return Native.QueryFullProcessImageName(process, 0, buffer, ref size) ? SwitchOptions.NormalizeProgram(new string(buffer, 0, size)) : null;
-        }
-        finally { Native.CloseHandle(process); }
+        return pid == 0 ? null : processName((int)pid);
     }
 }
 

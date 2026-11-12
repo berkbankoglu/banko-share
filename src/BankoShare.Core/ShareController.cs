@@ -14,9 +14,10 @@ public interface IInputPlatform
     void MaskMenuKey();
 }
 
-public sealed record PeerStatus(string Id, string Name, bool Connected, string? Address, DeviceInfo? Device);
+public sealed record PeerStatus(string Id, string Name, bool Connected, string? Address, DeviceInfo? Device, bool Paused = false);
+/// <summary>Paused: this machine has stepped aside for an anti-cheat-protected game.</summary>
 public sealed record ShareSnapshot(DeviceInfo Local, IReadOnlyList<PeerStatus> Peers, IReadOnlyList<DiscoveredDevice> Discovered,
-    ScreenLayout Layout, string? ControllingName, string? ControlledByName, SwitchOptions Options, PairingOffer? Pairing);
+    ScreenLayout Layout, string? ControllingName, string? ControlledByName, SwitchOptions Options, PairingOffer? Pairing, bool Paused = false);
 
 /// <summary>
 /// Connects local hooks, the switch engine and the network. Plays both roles: controller (our pointer is
@@ -47,7 +48,9 @@ public sealed class ShareController : IDisposable
     private string? controlledBy;
     private int reclaimTravel;
     private DateTimeOffset lastActivity = DateTimeOffset.MinValue;
-    private bool stateChanged, onInputThread;
+    private bool stateChanged, onInputThread, paused;
+    /// <summary>Peers that said they take no input right now (a protected game runs there).</summary>
+    private readonly HashSet<string> pausedPeers = new(StringComparer.Ordinal);
     private string? pendingNotice;
 
     public event Action? Changed;
@@ -121,6 +124,8 @@ public sealed class ShareController : IDisposable
         HookResult result;
         lock (gate)
         {
+            // The app removes its hooks while paused; this only covers events already on their way.
+            if (paused) return HookResult.Pass;
             onInputThread = true;
             try { result = body(); Flush(); }
             finally { onInputThread = false; }
@@ -133,17 +138,49 @@ public sealed class ShareController : IDisposable
 
     public void UpdateLocalMonitors(MonitorInfo[] monitors)
     {
-        DeviceInfo local;
+        Frame hello;
         lock (gate)
         {
-            local = engine.Local with { Monitors = monitors };
+            var local = engine.Local with { Monitors = monitors };
             local.Validate();
             engine.SetLocal(local, fx);
             Flush();
+            hello = HelloFrame();
         }
-        network.Broadcast(Frame.Of(FrameType.Hello, new HelloMessage(local, version, network.Port)));
+        network.Broadcast(hello);
         RaiseChanged();
     }
+
+    public bool Paused { get { lock (gate) return paused; } }
+
+    /// <summary>
+    /// Steps aside completely, e.g. while an anti-cheat-protected game runs here: the pointer comes home, a peer
+    /// controlling us is sent back, incoming control is refused and peers are told not to switch here. The app
+    /// also removes its input hooks for the duration, so nothing intercepts or injects input on this machine.
+    /// </summary>
+    public void SetPaused(bool value)
+    {
+        Frame hello;
+        lock (gate)
+        {
+            if (paused == value) return;
+            paused = value;
+            if (value)
+            {
+                engine.ForceLocal(fx);
+                if (controlledBy != null) Reclaim();
+            }
+            stateChanged = true;
+            Flush();
+            hello = HelloFrame();
+        }
+        AfterHook();
+        network.Broadcast(hello);
+        RaiseChanged();
+    }
+
+    /// <summary>Caller holds the lock.</summary>
+    private Frame HelloFrame() => Frame.Of(FrameType.Hello, new HelloMessage(engine.Local, version, network.Port, paused));
 
     /// <summary>Pointer comes home and a peer controlling us is told to stop (screen lock, sleep, panic).</summary>
     public void ReturnHome()
@@ -208,22 +245,27 @@ public sealed class ShareController : IDisposable
         {
             var online = engine.Peers.ToDictionary(p => p.Id, StringComparer.Ordinal);
             var peers = network.Directory.All.Select(r => new PeerStatus(r.Id, online.GetValueOrDefault(r.Id)?.Name ?? r.Name,
-                network.IsConnected(r.Id), r.Address, online.GetValueOrDefault(r.Id) ?? r.LastKnownDevice)).ToList();
+                network.IsConnected(r.Id), r.Address, online.GetValueOrDefault(r.Id) ?? r.LastKnownDevice, pausedPeers.Contains(r.Id))).ToList();
             var discovered = network.Discovered.Where(d => !network.Directory.IsPaired(d.Id)).ToList();
             string? NameOf(string? id) => id == null ? null : peers.FirstOrDefault(p => p.Id == id)?.Name ?? "Diğer bilgisayar";
-            return new(engine.Local, peers, discovered, layout.Clone(), NameOf(engine.ActivePeer), NameOf(controlledBy), engine.Options, network.CurrentPairing);
+            return new(engine.Local, peers, discovered, layout.Clone(), NameOf(engine.ActivePeer), NameOf(controlledBy), engine.Options, network.CurrentPairing, paused);
         }
     }
 
     // ---- Network (link threads) ----
 
-    private void OnLinkUp(PeerLink link) =>
-        link.TrySend(Frame.Of(FrameType.Hello, new HelloMessage(Local, version, network.Port)));
+    private void OnLinkUp(PeerLink link)
+    {
+        Frame hello;
+        lock (gate) hello = HelloFrame();
+        link.TrySend(hello);
+    }
 
     private void OnLinkDown(PeerLink link)
     {
         lock (gate)
         {
+            pausedPeers.Remove(link.PeerId);
             engine.RemovePeer(link.PeerId, fx);
             if (controlledBy == link.PeerId) { controlledBy = null; ReleaseInjected(); }
             Flush();
@@ -254,7 +296,9 @@ public sealed class ShareController : IDisposable
                 network.Directory.AddOrUpdate(id, hello.Device.Name, new IPEndPoint(link.Address, hello.Port).ToString(), hello.Device.Monitors);
                 lock (gate)
                 {
-                    engine.SetPeer(hello.Device, fx);
+                    // A paused peer stays connected and on the layout but is no switching target until it says otherwise.
+                    if (hello.Paused) { pausedPeers.Add(id); engine.RemovePeer(id, fx); }
+                    else { pausedPeers.Remove(id); engine.SetPeer(hello.Device, fx); }
                     if (layout.PlaceMissing(KnownDevices()))
                     {
                         if (layout.Revision == 0) layout.Author = engine.Local.Id;
@@ -286,6 +330,8 @@ public sealed class ShareController : IDisposable
                 var p = frame.AsPoint();
                 lock (gate)
                 {
+                    // Paused (a protected game runs here): send the pointer straight back, inject nothing.
+                    if (paused) { network.Send(id, Frame.Empty(FrameType.Reclaim)); return; }
                     // Whoever moved last owns the pointer: being entered ends our own remote session.
                     engine.ForceLocal(fx);
                     if (controlledBy != null && controlledBy != id) ReleaseInjected();
@@ -385,7 +431,8 @@ public sealed class ShareController : IDisposable
                 var order = layout.ReadingOrder(KnownDevices());
                 if (command.Index >= order.Count) { pendingNotice = $"Düzende {(char)('A' + command.Index)} monitörü yok."; break; }
                 var (device, monitor) = order[command.Index];
-                if (!engine.JumpTo(device.Id, monitor.Center, fx)) pendingNotice = $"{device.Name} bağlı değil.";
+                if (!engine.JumpTo(device.Id, monitor.Center, fx))
+                    pendingNotice = pausedPeers.Contains(device.Id) ? $"{device.Name} oyun modunda; orada Riot oyunu açık." : $"{device.Name} bağlı değil.";
                 break;
             }
         }

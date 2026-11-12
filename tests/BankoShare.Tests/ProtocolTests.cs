@@ -36,7 +36,11 @@ internal static class ProtocolTests
                 T.Check(read.Type == f.Type && read.Payload.SequenceEqual(f.Payload), $"Frame {f.Type} changed");
             }
             var back = (await ReadOne(Frame.Of(FrameType.Hello, hello))).As<HelloMessage>();
-            T.Check(back.Device.Id == hello.Device.Id && back.Device.Monitors.Length == 3 && back.Port == 24819, "Hello content changed");
+            T.Check(back.Device.Id == hello.Device.Id && back.Device.Monitors.Length == 3 && back.Port == 24819 && !back.Paused, "Hello content changed");
+            T.Check((await ReadOne(Frame.Of(FrameType.Hello, hello with { Paused = true }))).As<HelloMessage>().Paused, "Pause flag lost");
+            // 0.4.0 peers send no Paused field: it must read as not paused.
+            var old = System.Text.Json.JsonSerializer.Serialize(new { Device = Fixtures.Local, Version = "0.4.0", Port = 24819 });
+            T.Check(!new Frame(FrameType.Hello, System.Text.Encoding.UTF8.GetBytes(old)).As<HelloMessage>().Paused, "Old hello read as paused");
             T.Equal(new PointI(-5, 7), (await ReadOne(Frame.Enter(new(-5, 7)))).AsPoint(), "Enter position");
             var layout = new ScreenLayout { Revision = 2, Author = Fixtures.LocalId };
             layout.Offsets[Fixtures.RemoteId] = Fixtures.RemoteAboveMiddle;

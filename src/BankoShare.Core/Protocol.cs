@@ -46,8 +46,11 @@ public readonly record struct InputEvent(EventKind Kind, int A = 0, int B = 0, i
 /// <summary>LegacyPairRequest is the 0.3 pairing request; it is refused.</summary>
 public enum FrameType : byte { Heartbeat, Hello, Layout, Enter, Input, Leave, Reclaim, LegacyPairRequest, PairAccepted, PairStart, PairReply, PairFinish }
 
-/// <summary>Port is the sender's listening port; an inbound connection only reveals an ephemeral one.</summary>
-public sealed record HelloMessage(DeviceInfo Device, string Version, int Port);
+/// <summary>
+/// Port is the sender's listening port; an inbound connection only reveals an ephemeral one. Paused means the
+/// sender takes no input at the moment (an anti-cheat-protected game runs there); 0.4.0 peers omit it.
+/// </summary>
+public sealed record HelloMessage(DeviceInfo Device, string Version, int Port, bool Paused = false);
 /// <summary>SPAKE2 messages; byte fields are Base64.</summary>
 public sealed record PairStartMessage(string Element, string Name);
 public sealed record PairReplyMessage(string Element, string Confirmation);
