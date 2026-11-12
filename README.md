@@ -28,7 +28,11 @@ Eşleştirme kalıcıdır. Sonraki açılışlarda iki uygulama birbirini bulup 
 - **Panik tuşu:** Esc'e hızlıca iki kez basmak imleci ve klavyeyi bu bilgisayara geri getirir.
 - **Geri alma:** Kontrol edilen bilgisayarın kendi faresini oynatmak veya tıklamak kontrolü ona verir.
 - **Güvenli durumlar:** Fare düğmesi basılıyken geçiş yapılmaz. Bağlantı koparsa, ekran kilitlenirse veya bilgisayar uykuya geçerse imleç eve döner ve karşı tarafta basılı tuşlar bırakılır.
-- **Kapatma:** **Geçiş ayarları** sayfasından kenardan geçiş kapatılabilir; kısayollar yine çalışır.
+- **Arka planda çalışma:** Pencereyi kapatmak uygulamayı kapatmaz; Banko Share bildirim alanında (saatin yanında) paylaşmaya devam eder.
+  - Simgeye tıklayınca pencere açılır.
+  - Sağ tık menüsünde kenardan geçiş, bu bilgisayara dönme, Windows ile başlatma ve **Çıkış** vardır.
+  - Kurulu sürüm Windows açılınca bildirim alanında başlar. Bu, **Uygulama** sayfasından kapatılabilir.
+- **Kenardan geçişi kapatma:** **Geçiş ayarları** sayfasından veya bildirim alanı menüsünden yapılır. Kısayollar yine çalışır.
 - **Geçiş ayarları** (hepsi varsayılan olarak kapalı):
   - Ekran boyutlarını eşitleme: kenarın her yerinden orantılı geçiş.
   - İmleci ekranların etrafında döndürme.
@@ -38,7 +42,9 @@ Eşleştirme kalıcıdır. Sonraki açılışlarda iki uygulama birbirini bulup 
 
 ## Nasıl çalışır
 
-- C# / .NET 9 / WPF. Fare ve klavye kancaları arayüzden ayrı bir thread'de çalışır. Uygulama per-monitor DPI farkındalığıyla çalışır; bütün koordinatlar fiziksel pikseldir.
+- C# / .NET 9 / WPF. Görünüm BankoSpace'in Noir tasarımını izler.
+- Fare ve klavye kancaları arayüzden ayrı bir thread'de çalışır. Uygulama per-monitor DPI farkındalığıyla çalışır; bütün koordinatlar fiziksel pikseldir.
+- Karşı bilgisayardan gelen giriş (SendInput), imleç taşıma ve gizleme ayrı bir thread'de, hiçbir kilit tutulmadan yapılır. Windows SendInput'u, oturumdaki bütün düşük seviye kancalar olayı görene kadar bekletir. Kilit tutulurken çağrılsaydı aynı anda gelen fiziksel bir fare hareketi iki tarafı birbirine kilitlerdi.
 - Windows'un düşük seviye fare kancası kenara itilen imleç için kenarın ötesindeki noktayı bildirir. Geçiş buna ve paylaşılan monitör düzenine göre belirlenir.
 - İmleç diğer bilgisayardayken yerel imleç ana ekranın ortasında görünmez biçimde bekletilir. Hareket farkları karşı bilgisayara **mutlak konum** olarak gönderilir; böylece fare ivmesi iki kez uygulanmaz. Ağ yoğunlaştığında araya giren konumlar birleştirilir.
 - Her cihazın, Windows anahtar deposunda dışa aktarılamayan kalıcı bir RSA anahtarı ve kendinden imzalı sertifikası vardır. Sertifikanın SHA-256 parmak izi cihaz kimliğidir.
@@ -48,7 +54,8 @@ Eşleştirme kalıcıdır. Sonraki açılışlarda iki uygulama birbirini bulup 
   - Ağdaki bir saldırgan kodu bilgisayarında deneme-yanılmayla çözemez. Her bağlantı denemesi tek bir tahmine izin verir ve 5 denemede kod iptal olur.
 - Ağda bulma UDP 24820 yayınıyla yapılır. Bu yalnızca adres ipucudur; güven her zaman sabitlenmiş sertifikadan gelir. Bağlantılar TCP 24819 üzerindendir.
 - Her bağlantıda 0,5 sn'de bir kalp atışı gider; 3 sn sessizlik bağlantıyı kapatır. Kopan bağlantılar artan bekleme süreleriyle yeniden kurulur.
-- Hesap, bulut sunucusu, telemetri, tuş kaydı veya otomatik başlangıç yoktur.
+- Hesap, bulut sunucusu, telemetri veya tuş kaydı yoktur.
+- Windows ile başlatma, kullanıcıya ait `HKCU\…\Run` kaydıyla yapılır ve yalnızca Setup ile kurulan sürüm için açılır.
 - Ayarlar `%LocalAppData%\BankoShare.Settings` içinde tutulur: eşleşen cihazlar, düzen, tercihler ve açık sertifika. Dosyalar arka planda, geçici dosya üzerinden atomik olarak yazılır. Virüs tarayıcısı dosyayı kısa süre tutarsa yazma yeniden denenir. Fare kancası diske hiç beklemez.
 
 ## Güncellemeler
@@ -76,7 +83,7 @@ Testler gerçek loopback TLS bağlantılarıyla eşleştirme, yanlış kod ve se
 ## Sınırlar
 
 - Yönetici olarak çalışan pencereler, UAC, kilit ekranı ve Ctrl+Alt+Del normal kullanıcı uygulamasına kapalıdır.
-- Pano, dosya aktarımı, hız ayarları ve tepsi simgesi henüz yok (bkz. [yol haritası](docs/PLAN.md)).
+- Pano, dosya aktarımı ve hız ayarları henüz yok (bkz. [yol haritası](docs/PLAN.md)).
 - Tam ekran ve program koşulları yalnızca kontrol eden bilgisayardaki ön pencereye bakar; kontrol edilen bilgisayardaki tam ekran uygulama geçişi engellemez.
 - Fare takılı olmayan bir bilgisayarda Windows imleci çizmeyebilir; imleç çizme Aşama 3'te.
 - Başlangıçta iki bilgisayarda aynı klavye düzenini kullanın.

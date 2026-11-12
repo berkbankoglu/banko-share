@@ -88,7 +88,7 @@ Hepsi varsayılan olarak kapalıdır; açılmadıkça 0.3.0 davranışı değiş
 
 ## Aşama 6 — Diğer ve dağıtım
 
-- Tepsi simgesi ve bildirimler, Windows ile başlatma.
+- ~~Tepsi simgesi ve bildirimler, Windows ile başlatma~~: 0.4.1'de yapıldı (bildirim alanında çalışma, durum simgesi, menü, Windows ile başlatma, tek kopya).
 - Panik tuşunu ayarlama.
 - Pasif ekranları karartma, tanılama modu.
 - Güncellemeler için proxy desteği.

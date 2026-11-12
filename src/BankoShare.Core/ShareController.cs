@@ -39,13 +39,15 @@ public sealed class ShareController : IDisposable
     private readonly BackgroundSaver saver;
     private readonly string version;
     private readonly SwitchEngine engine;
+    /// <summary>Input applied on this machine for a peer. Touched only on <see cref="worker"/>.</summary>
     private readonly InputState injected;
+    private readonly OsWorker worker;
     private readonly List<EngineEffect> fx = [];
     private ScreenLayout layout;
     private string? controlledBy;
     private int reclaimTravel;
     private DateTimeOffset lastActivity = DateTimeOffset.MinValue;
-    private bool stateChanged;
+    private bool stateChanged, onInputThread;
     private string? pendingNotice;
 
     public event Action? Changed;
@@ -62,6 +64,7 @@ public sealed class ShareController : IDisposable
         var options = (store?.Load(PreferencesFile, () => new SwitchOptions()) ?? new SwitchOptions()).Sanitized();
         engine = new SwitchEngine(local, layout) { Options = options, Environment = environment };
         injected = new InputState(platform.Inject);
+        worker = new OsWorker("Banko Share injector");
         network.LinkUp += OnLinkUp;
         network.LinkDown += OnLinkDown;
         network.FrameReceived += OnFrame;
@@ -80,57 +83,47 @@ public sealed class ShareController : IDisposable
 
     // ---- Local hooks (input thread). Injected events never reach these methods. ----
 
-    public HookResult OnMouseMove(PointI pt, PointI cursor, bool localButtonsHeld, uint timeMs = 0)
+    public HookResult OnMouseMove(PointI pt, PointI cursor, bool localButtonsHeld, uint timeMs = 0) => InHook(() =>
+    {
+        if (controlledBy != null)
+        {
+            reclaimTravel += Math.Abs(pt.X - cursor.X) + Math.Abs(pt.Y - cursor.Y);
+            if (reclaimTravel >= ReclaimDistance) Reclaim();
+            return HookResult.Pass;
+        }
+        // Pointer changes still queued (say, a return home from the network) land before a new crossing starts.
+        if (engine.ActivePeer == null && worker.Pending > 0 && engine.Local.MonitorAt(pt) == null) return HookResult.Pass;
+        return engine.OnMouseMove(pt, cursor, localButtonsHeld, fx, timeMs);
+    });
+
+    public HookResult OnMouseButton(int button, bool down) => InHook(() =>
+    {
+        if (controlledBy != null) { if (down) Reclaim(); return HookResult.Pass; }
+        return engine.OnButton(button, down, fx);
+    });
+
+    public HookResult OnMouseWheel(int delta, bool horizontal) => InHook(() =>
+        controlledBy != null ? HookResult.Pass : engine.OnWheel(delta, horizontal, fx));
+
+    public HookResult OnKey(int vk, int scan, bool extended, bool down, uint timeMs) => InHook(() =>
+    {
+        // This machine's own keyboard keeps working locally while a peer controls it.
+        if (controlledBy != null) { engine.TrackKey(vk, down); return HookResult.Pass; }
+        return engine.OnKey(vk, scan, extended, down, timeMs, fx);
+    });
+
+    /// <summary>
+    /// Hook callbacks run on the input thread. Pointer effects they cause run right there, before the hook returns,
+    /// so the next event already sees the parked cursor. Everything else goes through <see cref="worker"/>.
+    /// </summary>
+    private HookResult InHook(Func<HookResult> body)
     {
         HookResult result;
         lock (gate)
         {
-            if (controlledBy != null)
-            {
-                reclaimTravel += Math.Abs(pt.X - cursor.X) + Math.Abs(pt.Y - cursor.Y);
-                if (reclaimTravel >= ReclaimDistance) Reclaim();
-                result = HookResult.Pass;
-            }
-            else result = engine.OnMouseMove(pt, cursor, localButtonsHeld, fx, timeMs);
-            Flush();
-        }
-        AfterHook();
-        return result;
-    }
-
-    public HookResult OnMouseButton(int button, bool down)
-    {
-        HookResult result;
-        lock (gate)
-        {
-            if (controlledBy != null) { if (down) Reclaim(); result = HookResult.Pass; }
-            else result = engine.OnButton(button, down, fx);
-            Flush();
-        }
-        AfterHook();
-        return result;
-    }
-
-    public HookResult OnMouseWheel(int delta, bool horizontal)
-    {
-        lock (gate)
-        {
-            if (controlledBy != null) return HookResult.Pass;
-            var result = engine.OnWheel(delta, horizontal, fx);
-            Flush();
-            return result;
-        }
-    }
-
-    public HookResult OnKey(int vk, int scan, bool extended, bool down, uint timeMs)
-    {
-        HookResult result;
-        lock (gate)
-        {
-            // This machine's own keyboard keeps working locally while a peer controls it.
-            if (controlledBy != null) { engine.TrackKey(vk, down); result = HookResult.Pass; }
-            else result = engine.OnKey(vk, scan, extended, down, timeMs, fx);
-            Flush();
+            onInputThread = true;
+            try { result = body(); Flush(); }
+            finally { onInputThread = false; }
         }
         AfterHook();
         return result;
@@ -337,20 +330,28 @@ public sealed class ShareController : IDisposable
         network.Send(peer, Frame.Empty(FrameType.Reclaim));
     }
 
-    private void TryInject(InputEvent input)
+    /// <summary>Queues input for this machine; it is applied in order on the worker, never under the lock.</summary>
+    private void TryInject(InputEvent input) => worker.Post(() =>
     {
         try { injected.Apply(input); }
         catch (Exception) when (input.Kind == EventKind.Move) { /* e.g. secure desktop; next move retries. */ }
         catch (Exception) { Notice?.Invoke("Giriş uygulanamadı. Yönetici olarak çalışan pencereler bu sürümde desteklenmez."); }
-    }
+    });
 
-    private void ReleaseInjected()
+    private void ReleaseInjected() => worker.Post(() =>
     {
         // The controller kept the key that finished its hotkey; a lone Alt release would open the menu bar here.
         if (injected.IsKeyHeld(AltScan))
             try { platform.MaskMenuKey(); } catch (Exception) { /* Cosmetic only. */ }
         try { injected.ReleaseAll(); }
         catch (Exception) { Notice?.Invoke("Bazı tuşlar bırakılamadı; basılı kalan tuşları fiziksel klavyede bırakın."); }
+    });
+
+    /// <summary>Pointer changes on this machine: at once on the input thread, otherwise in order on the worker.</summary>
+    private void Os(Action action)
+    {
+        if (!onInputThread) { worker.Post(action); return; }
+        try { action(); } catch (Exception) { /* A failed warp or hide must not break the hook. */ }
     }
 
     /// <summary>Takes effect at once; the file is written in the background.</summary>
@@ -415,17 +416,15 @@ public sealed class ShareController : IDisposable
         {
             switch (effect)
             {
-                case EngineEffect.WarpLocal w: platform.WarpCursor(w.Point); break;
-                case EngineEffect.HideLocalCursor h: platform.SetCursorHidden(h.Hidden, h.Anchor); break;
+                case EngineEffect.WarpLocal w: Os(() => platform.WarpCursor(w.Point)); break;
+                case EngineEffect.HideLocalCursor h: Os(() => platform.SetCursorHidden(h.Hidden, h.Anchor)); break;
                 case EngineEffect.Enter e:
                     network.Send(e.Peer, Frame.Enter(e.Position)); stateChanged = true; lastActivity = DateTimeOffset.UtcNow; break;
                 case EngineEffect.Move m: network.Send(m.Peer, Frame.Input(new(EventKind.Move, m.Position.X, m.Position.Y))); break;
                 case EngineEffect.Leave l: network.Send(l.Peer, Frame.Empty(FrameType.Leave)); stateChanged = true; lastActivity = DateTimeOffset.UtcNow; break;
                 case EngineEffect.Forward f: network.Send(f.Peer, Frame.Input(f.Input)); break;
                 case EngineEffect.Command c: RunCommand(c); break;
-                case EngineEffect.MaskMenu:
-                    try { platform.MaskMenuKey(); } catch (Exception) { /* Cosmetic only. */ }
-                    break;
+                case EngineEffect.MaskMenu: Os(platform.MaskMenuKey); break;
                 case EngineEffect.Blocked b: pendingNotice = BlockedText(b, engine.Options.RequiredKey); break;
             }
         }
@@ -470,9 +469,15 @@ public sealed class ShareController : IDisposable
 
     private void SaveLayout() => saver.Schedule(LayoutFile, layout.Clone());
 
+    /// <summary>For tests and shutdown: waits until queued input and pointer changes have been applied.</summary>
+    public bool WaitForInput(TimeSpan timeout) => worker.WaitIdle(timeout);
+
     public void Dispose()
     {
         ReturnHome();
+        // Held keys on this machine are released and the pointer is shown before the process goes away.
+        worker.WaitIdle(TimeSpan.FromSeconds(2));
+        worker.Dispose();
         saver.WaitIdle(TimeSpan.FromSeconds(2));
         network.LinkUp -= OnLinkUp;
         network.LinkDown -= OnLinkDown;

@@ -18,16 +18,25 @@ namespace BankoShare.App;
 
 public partial class MainWindow : Window
 {
-    private static readonly Brush Accent = new SolidColorBrush(Color.FromRgb(0x83, 0xE3, 0xCB));
-    private static readonly Brush Remote = new SolidColorBrush(Color.FromRgb(0x7C, 0x93, 0xE6));
-    private static readonly Brush Idle = new SolidColorBrush(Color.FromRgb(0x3A, 0x44, 0x58));
-    private static readonly Brush Muted = new SolidColorBrush(Color.FromRgb(0xAA, 0xBB, 0xD3));
+    // BankoSpace "Noir" palette.
+    private static readonly Brush Connected = Freeze(0x3F, 0xB9, 0x50);
+    private static readonly Brush Sharing = Freeze(0x7E, 0xE7, 0x87);
+    private static readonly Brush Idle = Freeze(0x5C, 0x5C, 0x5C);
+    private static readonly Brush Muted = Freeze(0x72, 0x72, 0x72);
+    private static readonly Brush Secondary = Freeze(0xB0, 0xB0, 0xB0);
+    private static readonly Brush Warning = Freeze(0xD2, 0x99, 0x22);
+    private static readonly Brush Danger = Freeze(0xF8, 0x51, 0x49);
     private readonly ShareHost? host;
+    private readonly GithubUpdates updates = new();
     private readonly UpdateCoordinator updater;
+    private readonly TrayIcon tray;
+    private readonly SettingsStore appStore;
     private readonly CancellationTokenSource lifetime = new();
     private readonly DispatcherTimer updatePoll = new() { Interval = TimeSpan.FromMinutes(10) };
     private readonly DispatcherTimer tick = new() { Interval = TimeSpan.FromSeconds(1) };
-    private bool refreshQueued, updatingUi;
+    private AppPreferences preferences;
+    private RegisteredWaitHandle? showWait;
+    private bool refreshQueued, updatingUi, exiting, disposed;
     // Null forces the first render, including the empty-list messages.
     private string? peersSignature, discoveredSignature;
     private SwitchOptions? shownOptions;
@@ -37,7 +46,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        updater = new UpdateCoordinator(new GithubUpdates()) { Automatic = UpdatePreferences.Load().Automatic };
+        updater = new UpdateCoordinator(updates) { Automatic = UpdatePreferences.Load().Automatic };
         VersionText.Text = UpdateVersionText.Text = $"v{updater.CurrentVersion}";
         AutoUpdate.IsChecked = updater.Automatic;
         try { host = ShareHost.Start(updater.CurrentVersion); }
@@ -45,6 +54,20 @@ public partial class MainWindow : Window
         { ShowFatal($"Bağlantı noktası {PeerNetwork.DefaultPort} başka bir uygulama tarafından kullanılıyor. Banko Share'in başka bir kopyası açık olabilir."); }
         catch (Exception e) when (e is Win32Exception or InvalidOperationException)
         { ShowFatal("Banko Share başlatılamadı: " + e.Message); }
+        appStore = new SettingsStore(host?.SettingsPath ?? ShareHost.SettingsDirectory);
+        preferences = appStore.Load(AppPreferences.FileName, () => new AppPreferences());
+        // Installed copies start with Windows by default; the choice is remembered once made.
+        if (updates.IsInstalled && !preferences.AutostartConfigured && host?.IsTestInstance != true)
+        {
+            TrySetAutostart(true);
+            SavePreferences(preferences with { AutostartConfigured = true });
+        }
+        tray = new TrayIcon(autostartAvailable: updates.IsInstalled);
+        tray.OpenRequested += ShowFromTray;
+        tray.SwitchingToggled += () => host?.Controller.SetSwitchingEnabled(!host.Controller.Options.SwitchingEnabled);
+        tray.HomeRequested += () => host?.Controller.ReturnHome();
+        tray.AutostartToggled += enabled => { TrySetAutostart(enabled); Refresh(); };
+        tray.ExitRequested += ExitApplication;
         if (host != null)
         {
             host.Controller.Changed += QueueRefresh;
@@ -53,38 +76,120 @@ public partial class MainWindow : Window
             Editor.DeviceDropped += OnDeviceDropped;
             if (host.Warning != null) { WarningText.Text = host.Warning; WarningText.Visibility = Visibility.Visible; }
         }
+        // A second launch (Start menu, desktop shortcut) brings this window back instead of starting another copy.
+        if (App.ShowSignal != null)
+            showWait = ThreadPool.RegisterWaitForSingleObject(App.ShowSignal, (_, _) => Dispatcher.BeginInvoke(ShowFromTray), null, Timeout.Infinite, false);
         updater.Changed += RefreshUpdates;
+        updates.RestartHidden = () => !IsVisible;
+        updates.RestartPending = pending => tray.Visible = !pending;
         updatePoll.Tick += async (_, _) => { if (updater.Automatic) await updater.CheckAsync(lifetime.Token); };
         tick.Tick += (_, _) => { updater.Tick(DateTimeOffset.Now, Busy); RefreshUpdates(); Refresh(); };
-        ContentRendered += async (_, _) =>
+        // Not ContentRendered: when Windows starts us in the tray the window is never rendered.
+        Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, async () =>
         {
             updatePoll.Start(); tick.Start();
             if (updater.Automatic) await updater.CheckAsync(lifetime.Token);
             else UpdateStatus.Text = "Otomatik güncelleme kapalı.";
+        });
+        SourceInitialized += (_, _) => DarkTitleBar.Apply(this);
+        Closing += (_, e) =>
+        {
+            if (exiting) return;
+            // Closing the window keeps sharing running in the notification area.
+            e.Cancel = true;
+            HideToTray();
         };
+        Application.Current.SessionEnding += (_, _) => exiting = true;
+        Application.Current.Exit += (_, _) => Shutdown();
         SystemEvents.SessionSwitch += SessionChanged;
         SystemEvents.PowerModeChanged += PowerChanged;
         SystemEvents.DisplaySettingsChanged += DisplayChanged;
-        Closed += (_, _) =>
-        {
-            updatePoll.Stop(); tick.Stop(); lifetime.Cancel();
-            SystemEvents.SessionSwitch -= SessionChanged;
-            SystemEvents.PowerModeChanged -= PowerChanged;
-            SystemEvents.DisplaySettingsChanged -= DisplayChanged;
-            host?.Dispose();
-        };
+        Closed += (_, _) => Shutdown();
         Refresh();
     }
 
     private bool Busy => host?.Controller.IsBusy == true;
 
+    private static SolidColorBrush Freeze(byte r, byte g, byte b)
+    {
+        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
+        brush.Freeze();
+        return brush;
+    }
+
     private void ShowFatal(string message)
     {
-        StatusText.Text = message; StatusDot.Fill = Brushes.IndianRed;
+        StatusText.Text = message; StatusDot.Fill = Danger;
         DevicesPanel.IsEnabled = LayoutPanel.IsEnabled = SwitchingPanel.IsEnabled = false;
     }
 
     private void ShowNotice(string message) { NoticeText.Text = message; noticeUntil = DateTimeOffset.Now.AddSeconds(8); }
+
+    // ---- Notification area and lifetime ----
+
+    private void HideToTray()
+    {
+        Hide();
+        if (preferences.TrayNoticeShown) return;
+        tray.ShowNotice("Banko Share arka planda çalışıyor", "Fare ve klavye paylaşımı sürüyor. Açmak için simgeye tıklayın; kapatmak için sağ tıklayıp Çıkış'ı seçin.");
+        SavePreferences(preferences with { TrayNoticeShown = true });
+    }
+
+    private void ShowFromTray()
+    {
+        if (exiting) return;
+        Show();
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        // Windows only lets a window come to the front this way while the user is interacting with us.
+        Topmost = true; Topmost = false;
+        Activate();
+    }
+
+    private void ExitApplication()
+    {
+        exiting = true;
+        Close();
+        Application.Current.Shutdown();
+    }
+
+    /// <summary>Stops sharing and removes the tray icon. Runs once, whichever way the app ends.</summary>
+    private void Shutdown()
+    {
+        if (disposed) return;
+        disposed = true;
+        exiting = true;
+        updatePoll.Stop(); tick.Stop(); lifetime.Cancel();
+        showWait?.Unregister(null);
+        SystemEvents.SessionSwitch -= SessionChanged;
+        SystemEvents.PowerModeChanged -= PowerChanged;
+        SystemEvents.DisplaySettingsChanged -= DisplayChanged;
+        tray.Dispose();
+        host?.Dispose();
+    }
+
+    private void TrySetAutostart(bool enabled)
+    {
+        if (!updates.IsInstalled) return;
+        try { Autostart.Set(enabled); }
+        catch (Exception e) when (e is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+        { ShowNotice("Windows başlangıç ayarı değiştirilemedi."); }
+    }
+
+    private void SavePreferences(AppPreferences next)
+    {
+        preferences = next;
+        try { appStore.Save(AppPreferences.FileName, next); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { /* Asked again next time. */ }
+    }
+
+    private void Autostart_Changed(object sender, RoutedEventArgs e)
+    {
+        if (updatingUi) return;
+        TrySetAutostart(AutostartBox.IsChecked == true);
+        Refresh();
+    }
+
+    private void Exit_Click(object sender, RoutedEventArgs e) => ExitApplication();
 
     // ---- Refresh ----
 
@@ -98,8 +203,17 @@ public partial class MainWindow : Window
     private void Refresh()
     {
         refreshQueued = false;
+        if (disposed) return;
         if (DateTimeOffset.Now > noticeUntil) NoticeText.Text = "";
-        if (host == null) return;
+        var autostart = updates.IsInstalled && Autostart.IsEnabled();
+        updatingUi = true;
+        AutostartBox.IsChecked = autostart;
+        AutostartBox.IsEnabled = updates.IsInstalled;
+        updatingUi = false;
+        AutostartNote.Text = updates.IsInstalled
+            ? "Oturum açınca Banko Share bildirim alanında başlar ve eşleşmiş bilgisayarlara bağlanır."
+            : "Bu kopya kurulu değil; Windows ile başlatma yalnızca Setup ile kurulan sürümde kullanılır.";
+        if (host == null) { tray.Update(TrayState.Idle, "Banko Share · başlatılamadı", false, false, autostart); return; }
         var s = host.Controller.Snapshot();
         LocalNameText.Text = s.Local.Name;
         if (DateTimeOffset.Now - addresses.At > TimeSpan.FromSeconds(15))
@@ -114,13 +228,22 @@ public partial class MainWindow : Window
         var connected = s.Peers.Count(p => p.Connected);
         (StatusText.Text, StatusDot.Fill) = s switch
         {
-            { ControllingName: { } name } => ($"Fare ve klavye şu an {name} bilgisayarında · geri dönmek için Esc Esc", Remote),
-            { ControlledByName: { } name } => ($"{name} bu bilgisayarı kontrol ediyor · fareyi oynatarak geri alın", Remote),
+            { ControllingName: { } name } => ($"Fare ve klavye şu an {name} bilgisayarında · geri dönmek için Esc Esc", Sharing),
+            { ControlledByName: { } name } => ($"{name} bu bilgisayarı kontrol ediyor · fareyi oynatarak geri alın", Sharing),
             { Options.SwitchingEnabled: false } => ("Ekran kenarından geçiş kapalı", Idle),
-            _ when connected > 0 => ($"{connected} cihaz bağlı · imleci değen kenara iterek geçin", Accent),
+            _ when connected > 0 => ($"{connected} cihaz bağlı · imleci değen kenara iterek geçin", Connected),
             _ when s.Peers.Count > 0 => ("Eşleşmiş cihaz bekleniyor · iki bilgisayarda da Banko Share açık olmalı", Idle),
             _ => ("Henüz eşleşmiş cihaz yok", Idle)
         };
+        var trayState = s.ControllingName != null || s.ControlledByName != null ? TrayState.Sharing : connected > 0 ? TrayState.Connected : TrayState.Idle;
+        var trayText = s switch
+        {
+            { ControllingName: { } name } => $"Banko Share · fare {name} bilgisayarında",
+            { ControlledByName: { } name } => $"Banko Share · {name} kontrol ediyor",
+            _ when connected > 0 => $"Banko Share · {string.Join(", ", s.Peers.Where(p => p.Connected).Select(p => p.Name))} bağlı",
+            _ => "Banko Share · bağlı cihaz yok"
+        };
+        tray.Update(trayState, trayText, s.Options.SwitchingEnabled, s.ControllingName != null || s.ControlledByName != null, autostart);
     }
 
     private void RefreshPeers(ShareSnapshot s)
@@ -131,7 +254,7 @@ public partial class MainWindow : Window
         PeersPanel.Children.Clear();
         if (s.Peers.Count == 0)
         {
-            PeersPanel.Children.Add(new TextBlock { Text = "Henüz eşleşmiş cihaz yok. Aşağıdan ekleyin.", Foreground = Muted });
+            PeersPanel.Children.Add(new TextBlock { Text = "Henüz eşleşmiş cihaz yok. Aşağıdan ekleyin.", Foreground = Secondary });
             return;
         }
         foreach (var p in s.Peers)
@@ -141,7 +264,7 @@ public partial class MainWindow : Window
             remove.Click += RemovePeer_Click;
             DockPanel.SetDock(remove, Dock.Right);
             row.Children.Add(remove);
-            row.Children.Add(new Ellipse { Width = 9, Height = 9, Fill = p.Connected ? Accent : Idle, Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center });
+            row.Children.Add(new Ellipse { Width = 9, Height = 9, Fill = p.Connected ? Connected : Idle, Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center });
             var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             text.Children.Add(new TextBlock { Text = p.Name, FontWeight = FontWeights.SemiBold });
             text.Children.Add(new TextBlock { Text = (p.Connected ? "Bağlı" : "Bağlı değil") + (p.Address != null ? " · " + p.Address : ""), Foreground = Muted, FontSize = 12 });
@@ -160,7 +283,7 @@ public partial class MainWindow : Window
         DiscoveredList.Items.Clear();
         foreach (var d in s.Discovered)
         {
-            var item = new ListBoxItem { Content = $"{d.Name}  ·  {d.Endpoint.Address}", Tag = d, Foreground = Brushes.White };
+            var item = new ListBoxItem { Content = $"{d.Name}  ·  {d.Endpoint.Address}", Tag = d };
             DiscoveredList.Items.Add(item);
             if (d.Id == selected?.Id) item.IsSelected = true;
         }
@@ -190,7 +313,7 @@ public partial class MainWindow : Window
             : items.Count == 1 ? "Diğer bilgisayarın monitör bilgisi ilk bağlantıda gelir."
             : !s.Peers.Any(p => p.Connected) ? "Düzen kaydedildi. Cihazlar bağlanınca imleç değen kenarlardan geçer."
             : "Hazır. İmleç, birbirine değen kenarlardan geçer.";
-        LayoutHintText.Foreground = loose.Count > 0 ? new SolidColorBrush(Color.FromRgb(0xF6, 0xC1, 0x77)) : Muted;
+        LayoutHintText.Foreground = loose.Count > 0 ? Warning : Secondary;
     }
 
     // ---- Devices page ----

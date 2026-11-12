@@ -28,7 +28,7 @@ jobs:
       - run: dotnet run --project tests/BankoShare.Tests -c Release --no-build
       - run: dotnet publish src/BankoShare.App -c Release -r win-x64 --self-contained true -p:Version=${{ env.BANKO_VERSION }} -o artifacts/publish
       - name: Package installer and update feed
-        run: dotnet vpk pack --packId BankoShare --packTitle "Banko Share" --packAuthors berkbankoglu --packVersion ${{ env.BANKO_VERSION }} --packDir artifacts/publish --mainExe BankoShare.App.exe --channel win --runtime win-x64 --outputDir artifacts/releases
+        run: dotnet vpk pack --packId BankoShare --packTitle "Banko Share" --packAuthors berkbankoglu --packVersion ${{ env.BANKO_VERSION }} --packDir artifacts/publish --mainExe BankoShare.App.exe --icon src/BankoShare.App/BankoShare.ico --channel win --runtime win-x64 --outputDir artifacts/releases
       - name: Publish complete release
         env:
           GH_TOKEN: ${{ github.token }}

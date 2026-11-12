@@ -30,10 +30,18 @@ internal sealed class GithubUpdates : IUpdateBackend
         var report = new Progress<int>(progress);
         await manager.DownloadUpdatesAsync(available, p => ((IProgress<int>)report).Report(p), token);
     }
+    /// <summary>When true at restart time, the updated app comes back in the notification area, as it was.</summary>
+    public Func<bool>? RestartHidden { get; set; }
+    /// <summary>True just before the process is replaced (the tray icon goes away cleanly); false if that failed.</summary>
+    public Action<bool>? RestartPending { get; set; }
+
     public void ApplyAndRestart()
     {
         if (available == null) throw new InvalidOperationException("No update selected.");
-        manager.ApplyUpdatesAndRestart(available.TargetFullRelease);
+        var args = RestartHidden?.Invoke() == true ? new[] { Autostart.TrayArgument } : null;
+        RestartPending?.Invoke(true);
+        try { manager.ApplyUpdatesAndRestart(available.TargetFullRelease, args); }
+        catch { RestartPending?.Invoke(false); throw; }
     }
 }
 

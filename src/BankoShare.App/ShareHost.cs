@@ -41,8 +41,16 @@ internal sealed class ShareHost : IDisposable
     public static readonly string SettingsDirectory =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BankoShare.Settings");
 
-    private ShareHost(DeviceIdentity identity, PeerNetwork network, ShareController controller, WindowsPlatform platform, InputHost input, string? warning)
-    { Identity = identity; Network = network; Controller = controller; Platform = platform; Input = input; Warning = warning; }
+    private ShareHost(DeviceIdentity identity, PeerNetwork network, ShareController controller, WindowsPlatform platform, InputHost input, string? warning,
+        string settingsPath, bool testInstance)
+    {
+        Identity = identity; Network = network; Controller = controller; Platform = platform; Input = input; Warning = warning;
+        SettingsPath = settingsPath; IsTestInstance = testInstance;
+    }
+
+    public string SettingsPath { get; }
+    /// <summary>Started with BANKOSHARE_TEST_PORT: must not touch the installed app's startup entry.</summary>
+    public bool IsTestInstance { get; }
 
     public DeviceIdentity Identity { get; }
     public PeerNetwork Network { get; }
@@ -53,9 +61,12 @@ internal sealed class ShareHost : IDisposable
 
     public static ShareHost Start(string version)
     {
-        var store = new SettingsStore(SettingsDirectory);
+        // Test instances run beside the installed app: their own settings, port and no discovery broadcasts.
+        var testPort = int.TryParse(Environment.GetEnvironmentVariable("BANKOSHARE_TEST_PORT"), out var p) && p is > 1024 and < 65536 ? p : 0;
+        var directory = testPort != 0 ? Path.Combine(Path.GetTempPath(), "BankoShare.Test-" + testPort) : SettingsDirectory;
+        var store = new SettingsStore(directory);
         DeviceIdentity identity; string? warning = null;
-        try { identity = IdentityStore.LoadOrCreate(SettingsDirectory); }
+        try { identity = testPort != 0 ? DeviceIdentity.CreateEphemeral() : IdentityStore.LoadOrCreate(directory); }
         catch (Exception e) when (e is CryptographicException or IOException or UnauthorizedAccessException)
         {
             identity = DeviceIdentity.CreateEphemeral();
@@ -64,7 +75,9 @@ internal sealed class ShareHost : IDisposable
         var monitors = Monitors.Get();
         var platform = new WindowsPlatform(monitors);
         var name = PeerDirectory.CleanName(Environment.MachineName);
-        var network = new PeerNetwork(identity, name, new PeerDirectory(store));
+        var network = testPort != 0
+            ? new PeerNetwork(identity, name + " (test)", new PeerDirectory(store), testPort, discovery: false)
+            : new PeerNetwork(identity, name, new PeerDirectory(store));
         var controller = new ShareController(new DeviceInfo(identity.Id, name, monitors), network, platform, store, version, new WindowsEnvironment());
         InputHost? input = null;
         try
@@ -77,7 +90,7 @@ internal sealed class ShareHost : IDisposable
             input?.Dispose(); controller.Dispose(); network.Dispose(); identity.Dispose();
             throw;
         }
-        return new ShareHost(identity, network, controller, platform, input, warning);
+        return new ShareHost(identity, network, controller, platform, input, warning, directory, testPort != 0);
     }
 
     public void RefreshMonitors()

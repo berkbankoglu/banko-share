@@ -9,7 +9,7 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <Version>0.4.0</Version>
+    <Version>0.4.1</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <StartupObject>BankoShare.App.App</StartupObject>
     <OutputType>WinExe</OutputType>
@@ -17,7 +17,19 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <!-- Only for the notification-area icon (NotifyIcon). -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- WFO0003 wants DPI awareness in code for Windows Forms apps; this is a WPF app and the manifest sets it for the whole process. -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+    <ApplicationIcon>BankoShare.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WPF and Windows Forms share type names (Application, Button, MessageBox…); keep Forms explicit. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+    <Resource Include="BankoShare.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <ApplicationDefinition Remove="App.xaml" />

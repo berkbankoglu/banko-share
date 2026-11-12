@@ -1,5 +1,34 @@
 # Doğrulama kayıtları ve kabul testleri
 
+## Kontrol edilen bilgisayarda donma — 12.11.2026, v0.4.1
+
+**Bildirim (iki bilgisayarda, 0.4.0):** DESKTOP'a geçip oradaki Banko Share penceresini sürüklemek veya küçültmek imleci donduruyordu. Kurtulmak için DESKTOP'un kendi faresiyle tıklamak gerekiyordu.
+
+**Yeniden üretme (BANKOARTS, gerçek Windows girişiyle):**
+
+- Kurulu uygulamanın yanında ayrı portta (`BANKOSHARE_TEST_PORT`) bir test kopyası açıldı. Bir test eşi bu kopyayı gerçek protokolle kontrol edip penceresini başlık çubuğundan sürükledi ve küçültme düğmesine tıkladı.
+- 0.4.0 kodunda, fiziksel fare kıpırdadığı sırada bir hareket **1085 ms** gecikti (normalde 1–15 ms) ve sürükleme bozuldu.
+- **Neden:** SendInput, oturumdaki bütün düşük seviye kancalar olayı görene kadar dönmez. Uygulama SendInput'u bir kilit tutarken çağırıyordu. Fiziksel fare olayı gelen kanca da aynı kilidi bekliyordu. İki taraf birbirini Windows'un kanca zaman aşımına (yaklaşık 1 sn) kadar bekledi. Tekrarlanan zaman aşımları Windows'un kancayı kaldırmasına yol açabilir.
+
+**Düzeltme:** Gelen giriş, imleç taşıma ve gizleme, sırası korunarak ayrı bir iş parçacığında ve hiçbir kilit tutulmadan uygulanıyor.
+
+**Doğrulama:**
+
+- Yeni test "fiziksel fare olayı, süren bir enjeksiyonu hiç beklemez":
+  - Sahte SendInput, Windows gibi kanca bekleyerek bloke olur; o sırada kontrol edilen tarafa 1 piksellik fiziksel hareket gelir.
+  - Eski kodla test başarısız oluyor; düzeltmeyle geçiyor.
+- Düzeltilmiş sürümle gerçek deneme:
+  - 21 sürükleme adımının hepsi yerine ulaştı, hiç takılma olmadı. Pencere tam 300 piksel kaydı.
+  - Sonrasında imleç serbestçe hareket etti.
+  - Küçültme tıklaması bu denemede yanlış yere gitti; test betiği düğmenin yerini sürüklemeden önce hesaplamıştı. Düzeltilmiş betikle yapılan son deneme ise kullanıcı fareyi kullandığı için başlamadan durdu (geri alma doğru çalıştı).
+- 55 test üç ardışık çalıştırmada geçti.
+
+**Bildirim alanı ve görünüm (test kopyasıyla):**
+
+- Pencereyi kapatınca süreç çalışmaya devam ediyor ve pencere gizleniyor.
+- İkinci açılış hemen çıkıyor ve mevcut pencereyi geri getiriyor.
+- Dört sayfa Noir temasıyla ekran görüntüsünden kontrol edildi.
+
 ## 6 haneli eşleştirme (SPAKE2) — 12.11.2026, v0.4.0
 
 **Neden:** 20 karakterlik kodun ilk 13 karakteri cihazın parmak izi olduğu için kod her seferinde aynı görünüyordu ve yazması zahmetliydi.

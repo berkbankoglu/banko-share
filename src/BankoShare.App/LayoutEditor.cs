@@ -14,8 +14,9 @@ internal sealed record LayoutItem(DeviceInfo Device, bool IsLocal, bool Connecte
 /// </summary>
 internal sealed class LayoutEditor : FrameworkElement
 {
-    private static readonly Brush Surface = Freeze("#0B111C"), LocalFill = Freeze("#83E3CB"), RemoteFill = Freeze("#7C93E6"),
-        OfflineFill = Freeze("#3A4458"), Outline = Freeze("#101827"), Dark = Freeze("#0B111C"), Light = Freeze("#EAF1FF"), Hint = Freeze("#5A6B85");
+    // BankoSpace Noir: this machine in the green accent, connected peers light grey, offline peers dark.
+    private static readonly Brush Surface = Freeze("#161616"), LocalFill = Freeze("#7EE787"), RemoteFill = Freeze("#C9C9C9"),
+        OfflineFill = Freeze("#2A2A2A"), Outline = Freeze("#1A1A1A"), Dark = Freeze("#1A1A1A"), Light = Freeze("#F0F0F0"), Hint = Freeze("#727272");
     private const double Inset = 36;
     private IReadOnlyList<LayoutItem> items = [];
     private ScreenLayout layout = new();

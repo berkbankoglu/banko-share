@@ -52,10 +52,13 @@ internal sealed class FakePlatform : IInputPlatform
     private readonly List<bool> hidden = [];
     private readonly List<InputEvent> injected = [];
     public Func<InputEvent, bool>? FailWhen { get; set; }
+    /// <summary>Runs inside Inject, e.g. to block like SendInput does while Windows waits for low-level hooks.</summary>
+    public Action<InputEvent>? DuringInject { get; set; }
     public void WarpCursor(PointI point) { lock (gate) warps.Add(point); }
     public void SetCursorHidden(bool hide, PointI anchor) { lock (gate) hidden.Add(hide); }
     public void Inject(InputEvent input)
     {
+        DuringInject?.Invoke(input);
         if (FailWhen?.Invoke(input) == true) throw new IOException("Rejected by test platform");
         lock (gate) injected.Add(input);
     }

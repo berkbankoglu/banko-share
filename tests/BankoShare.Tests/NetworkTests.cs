@@ -138,9 +138,30 @@ internal static class NetworkTests
             // Someone at DESKTOP grabs its own mouse.
             T.Equal(HookResult.Pass, pair.B.Controller.OnMouseMove(new(800, 1000), new(780, 1000), false), "Physical move on peer");
             await T.Eventually(() => a.Snapshot().ControllingName == null, "controller released");
+            // Both sides apply pointer and key changes on their worker threads.
+            T.Check(a.WaitForInput(TimeSpan.FromSeconds(2)) && pair.B.Controller.WaitForInput(TimeSpan.FromSeconds(2)), "Input worker stuck");
             T.Check(pair.A.Platform.Warps.Last() == new PointI(1000, 0) && pair.A.Platform.Hidden.Last() == false, "Not returned to the exit point");
             var released = pair.B.Platform.Injected.Where(e => e.Kind == EventKind.Key && e.B == 0).Select(e => e.A).ToHashSet();
             T.Check(released.SetEquals([29, 46]), "Held keys not released on the peer");
+        });
+        await s.TestAsync("A physical mouse event on the controlled machine never waits for an injection in progress", async () =>
+        {
+            using var pair = await ControllerPair.Create();
+            pair.Arrange();
+            await T.Eventually(() => pair.B.Controller.Snapshot().Layout.SameArrangement(pair.A.Controller.Snapshot().Layout), "layout synced");
+            using var injecting = new ManualResetEventSlim(); using var release = new ManualResetEventSlim();
+            // SendInput does not return until every low-level hook, including our own, has seen the event.
+            pair.B.Platform.DuringInject = e => { if (e is { Kind: EventKind.Move, A: 700 }) { injecting.Set(); release.Wait(5000); } };
+            var a = pair.A.Controller; var anchor = new PointI(1280, 720);
+            a.OnMouseMove(new(1000, -6), new(1000, 0), false);
+            a.OnMouseMove(anchor + new PointI(20, 0), anchor, false);
+            T.Check(await Task.Run(() => injecting.Wait(5000)), "DESKTOP never injected the move");
+            // Meanwhile DESKTOP's hook thread sees a 1-pixel physical move.
+            var hook = Task.Run(() => pair.B.Controller.OnMouseMove(new(701, 1074), new(700, 1074), false));
+            var returned = hook.Wait(1000);
+            release.Set();
+            T.Check(returned, "The hook waited for SendInput, which waits for the hook: Windows would time it out and drop the hook");
+            T.Check(pair.B.Controller.Snapshot().ControlledByName != null, "A 1-pixel nudge took control back");
         });
         await s.TestAsync("Losing the peer mid-session brings the pointer home", async () =>
         {
@@ -151,6 +172,7 @@ internal static class NetworkTests
             await T.Eventually(() => pair.B.Controller.Snapshot().ControlledByName != null, "entered");
             pair.B.Network.Dispose();
             await T.Eventually(() => pair.A.Controller.Snapshot().ControllingName == null, "returned home");
+            T.Check(pair.A.Controller.WaitForInput(TimeSpan.FromSeconds(2)), "Input worker stuck");
             T.Check(pair.A.Platform.Warps.Last() == new PointI(1000, 0) && pair.A.Platform.Hidden.Last() == false, "Pointer stranded");
             T.Equal(HookResult.Pass, pair.A.Controller.OnMouseMove(new(1000, -6), new(1000, 0), false), "Offline peer still a target");
         });
@@ -173,6 +195,7 @@ internal static class NetworkTests
             await T.Eventually(() => pair.B.Platform.Injected.Contains(new(EventKind.Key, 56, 1)), "Alt reached DESKTOP");
             T.Equal(HookResult.Block, a.OnKey(0x33, 4, false, true, 0), "Ctrl+Alt+3");
             await T.Eventually(() => a.Snapshot().ControllingName == null && pair.B.Controller.Snapshot().ControlledByName == null, "came home");
+            T.Check(a.WaitForInput(TimeSpan.FromSeconds(2)) && pair.B.Controller.WaitForInput(TimeSpan.FromSeconds(2)), "Input worker stuck");
             T.Equal(new PointI(1280, 720), pair.A.Platform.Warps.Last(), "Centre of monitor C");
             var injected = pair.B.Platform.Injected.ToList();
             int mask = injected.IndexOf(new(EventKind.Heartbeat, 0xE8)), altUp = injected.IndexOf(new(EventKind.Key, 56, 0));
