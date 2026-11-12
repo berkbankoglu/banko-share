@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Security.Authentication;
 using BankoShare.Core;
 
@@ -32,14 +33,35 @@ internal static class NetworkTests
             T.Check(b.Network.CurrentPairing == null, "Code survived brute force");
             await T.ThrowsAsync<AuthenticationException>(() => a.Network.PairAsync(b.Endpoint, code, Timeout()));
         });
-        await s.TestAsync("A code from another device fails before the secret is revealed", async () =>
+        await s.TestAsync("A relay in the middle cannot pair even when it passes on the right code", async () =>
         {
-            using var a = Node.Create("A"); using var b = Node.Create("B"); using var other = DeviceIdentity.CreateEphemeral();
-            var real = b.Network.OpenPairing().Code;
-            var forged = PairingCode.Create(other.Id, out _)[..17] + real[17..];
-            await T.ThrowsAsync<AuthenticationException>(() => a.Network.PairAsync(b.Endpoint, forged, Timeout()));
-            T.Check(b.Network.CurrentPairing != null, "Attempt counted although the secret was never sent");
-            await a.Network.PairAsync(b.Endpoint, real, Timeout());
+            using var a = Node.Create("A"); using var b = Node.Create("B"); using var relay = DeviceIdentity.CreateEphemeral();
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            // Terminates A's TLS with its own certificate, opens its own TLS to B and copies every frame both ways.
+            var relaying = Task.Run(async () =>
+            {
+                using var inbound = await listener.AcceptTcpClientAsync();
+                var (fromA, _) = await PeerLink.AcceptAsync(inbound, relay, Timeout());
+                var (outbound, toB, _) = await PeerLink.ConnectAsync(b.Endpoint, relay, _ => true, Timeout());
+                using (outbound)
+                {
+                    async Task Pump(Stream from, Stream to)
+                    {
+                        try { while (true) await Frame.WriteAsync(to, await Frame.ReadAsync(from, Timeout()), Timeout()); }
+                        catch (Exception) { from.Dispose(); to.Dispose(); }
+                    }
+                    await Task.WhenAll(Pump(fromA, toB), Pump(toB, fromA));
+                }
+            });
+            var code = b.Network.OpenPairing().Code;
+            await T.ThrowsAsync<AuthenticationException>(() => a.Network.PairAsync(new IPEndPoint(IPAddress.Loopback, ((IPEndPoint)listener.LocalEndpoint).Port), code, Timeout()));
+            await Task.WhenAny(relaying, Task.Delay(5000));
+            listener.Stop();
+            T.Check(a.Network.Directory.All.Count == 0 && b.Network.Directory.All.Count == 0, "Someone pinned the relay");
+            T.Check(b.Network.CurrentPairing != null, "One relayed attempt must not burn the code");
+            await a.Network.PairAsync(b.Endpoint, code, Timeout());
+            T.Check(a.Network.Directory.IsPaired(b.Id) && b.Network.Directory.IsPaired(a.Id), "Direct pairing with the same code failed");
         });
         await s.TestAsync("Unpaired certificates cannot open a session", async () =>
         {

@@ -34,7 +34,7 @@ public sealed class PeerNetwork : IDisposable
     private readonly Dictionary<string, DiscoveredDevice> discovered = new(StringComparer.Ordinal);
     private readonly HashSet<string> connecting = new(StringComparer.Ordinal);
     private readonly Dictionary<string, (DateTimeOffset Next, int Failures)> backoff = new(StringComparer.Ordinal);
-    private (string Secret, PairingOffer Offer, int Attempts)? pairing;
+    private (string Code, PairingOffer Offer, int Attempts)? pairing;
     private TcpListener? listener;
     private UdpClient? udp;
 
@@ -78,35 +78,56 @@ public sealed class PeerNetwork : IDisposable
         get { lock (gate) return pairing is { } p && p.Offer.Expires > DateTimeOffset.UtcNow ? p.Offer : null; }
     }
 
-    /// <summary>Shows a one-time code on this device. Another device enters it to pair with us.</summary>
+    /// <summary>Shows a new one-time code on this device, replacing any earlier one. Another device enters it to pair with us.</summary>
     public PairingOffer OpenPairing()
     {
-        var code = PairingCode.Create(self.Id, out var secret);
-        var offer = new PairingOffer(code, DateTimeOffset.UtcNow + PairingLifetime);
-        lock (gate) pairing = (secret, offer, 0);
+        var code = PairingCode.Create();
+        var offer = new PairingOffer(PairingCode.Format(code), DateTimeOffset.UtcNow + PairingLifetime);
+        lock (gate) pairing = (code, offer, 0);
         Changed?.Invoke();
         return offer;
     }
 
     public void ClosePairing() { lock (gate) pairing = null; Changed?.Invoke(); }
 
-    /// <summary>Pairs with the device that shows <paramref name="code"/> and keeps the connection open.</summary>
+    /// <summary>
+    /// Pairs with the device that shows <paramref name="code"/> and keeps the connection open. Any certificate
+    /// is accepted for this one connection; the SPAKE2 exchange, bound to both certificates, decides trust.
+    /// </summary>
     public async Task<string> PairAsync(IPEndPoint endpoint, string code, CancellationToken token)
     {
-        var (prefix, secret) = PairingCode.Parse(code);
+        var digits = PairingCode.Parse(code);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, life.Token);
         TcpClient client; System.Net.Security.SslStream ssl; string peerId;
-        try { (client, ssl, peerId) = await PeerLink.ConnectAsync(endpoint, self, id => PairingCode.Matches(id, prefix), linked.Token); }
-        catch (AuthenticationException) { throw new AuthenticationException("Bu kod o adresteki bilgisayara ait değil. Adresi ve kodu kontrol edin."); }
+        try { (client, ssl, peerId) = await PeerLink.ConnectAsync(endpoint, self, _ => true, linked.Token); }
+        catch (AuthenticationException) { throw new AuthenticationException("Güvenli bağlantı kurulamadı. O adreste Banko Share çalışıyor mu?"); }
         try
         {
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(linked.Token);
             deadline.CancelAfter(PeerLink.HandshakeTimeout);
-            await Frame.WriteAsync(ssl, Frame.Of(FrameType.PairRequest, new PairRequestMessage(secret, name)), deadline.Token);
+            // Big-number work stays off the caller's (UI) thread.
+            var spake = await Task.Run(() => Spake2.Client(digits, self.Id, peerId), deadline.Token);
+            await Frame.WriteAsync(ssl, Frame.Of(FrameType.PairStart, new PairStartMessage(Convert.ToBase64String(spake.Message), name)), deadline.Token);
             Frame reply;
             try { reply = await Frame.ReadAsync(ssl, deadline.Token); }
-            catch (IOException) { throw new AuthenticationException("Kod yanlış ya da süresi dolmuş. Diğer bilgisayarda yeni kod oluşturun."); }
-            if (reply.Type != FrameType.PairAccepted) throw new AuthenticationException("Eşleştirme reddedildi.");
+            catch (Exception e) when (e is IOException or InvalidDataException)
+            { throw new AuthenticationException("Diğer bilgisayarda geçerli bir kod yok. Orada yeni kod gösterin; iki bilgisayarda da Banko Share 0.4 veya üstü olmalı."); }
+            if (reply.Type != FrameType.PairReply) throw new AuthenticationException("Eşleştirme reddedildi.");
+            try
+            {
+                var answer = reply.As<PairReplyMessage>();
+                var element = Convert.FromBase64String(answer.Element);
+                await Task.Run(() => spake.Receive(element), deadline.Token);
+                if (!spake.Verify(Convert.FromBase64String(answer.Confirmation)))
+                    throw new AuthenticationException("Kod yanlış. Diğer bilgisayarda görünen 6 rakamı kontrol edin.");
+            }
+            catch (Exception e) when (e is FormatException or InvalidDataException or ArgumentNullException)
+            { throw new AuthenticationException("Eşleştirme reddedildi."); }
+            await Frame.WriteAsync(ssl, Frame.Of(FrameType.PairFinish, new PairFinishMessage(Convert.ToBase64String(spake.Confirmation))), deadline.Token);
+            Frame done;
+            try { done = await Frame.ReadAsync(ssl, deadline.Token); }
+            catch (Exception e) when (e is IOException or InvalidDataException) { throw new AuthenticationException("Eşleştirme reddedildi."); }
+            if (done.Type != FrameType.PairAccepted) throw new AuthenticationException("Eşleştirme reddedildi.");
         }
         catch { ssl.Dispose(); client.Dispose(); throw; }
         Directory.AddOrUpdate(peerId, address: endpoint.ToString());
@@ -144,37 +165,51 @@ public sealed class PeerNetwork : IDisposable
             {
                 using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
                 deadline.CancelAfter(PeerLink.HandshakeTimeout);
-                // Every connection opens with one frame: a pairing request, or normal traffic from a paired device.
+                // Every connection opens with one frame: the start of pairing, or normal traffic from a paired device.
                 var first = await Frame.ReadAsync(ssl, deadline.Token);
-                if (first.Type == FrameType.PairRequest)
-                {
-                    var request = first.As<PairRequestMessage>();
-                    if (!TryConsumePairing(request.Secret)) throw new AuthenticationException("Eşleştirme reddedildi.");
-                    Directory.AddOrUpdate(peerId, request.Name);
-                    await Frame.WriteAsync(ssl, Frame.Empty(FrameType.PairAccepted), deadline.Token);
-                    Paired?.Invoke(peerId);
-                }
+                if (first.Type == FrameType.PairStart) await AnswerPairing(ssl, peerId, first.As<PairStartMessage>(), deadline.Token);
                 else if (!Directory.IsPaired(peerId)) throw new AuthenticationException("Eşleşmemiş cihaz.");
-                Register(new PeerLink(client, ssl, peerId, initiator: false), first.Type is FrameType.Heartbeat or FrameType.PairRequest ? null : first);
+                Register(new PeerLink(client, ssl, peerId, initiator: false), first.Type is FrameType.Heartbeat or FrameType.PairStart ? null : first);
             }
             catch { ssl.Dispose(); throw; }
         }
         catch (Exception) { client.Dispose(); }
     }
 
-    private bool TryConsumePairing(string? secret)
+    /// <summary>Server side of SPAKE2. Throws (and the caller drops the connection) unless the client proves the code.</summary>
+    private async Task AnswerPairing(System.Net.Security.SslStream ssl, string peerId, PairStartMessage start, CancellationToken token)
     {
-        bool ok;
+        // Each exchange lets the other side test one guess, so it is counted before any answer is sent.
+        var code = TakePairingAttempt() ?? throw new AuthenticationException("Geçerli eşleştirme kodu yok.");
+        var element = Convert.FromBase64String(start.Element ?? "");
+        var spake = await Task.Run(() => { var s = Spake2.Server(code, peerId, self.Id); s.Receive(element); return s; }, token);
+        await Frame.WriteAsync(ssl, Frame.Of(FrameType.PairReply,
+            new PairReplyMessage(Convert.ToBase64String(spake.Message), Convert.ToBase64String(spake.Confirmation))), token);
+        var finish = await Frame.ReadAsync(ssl, token);
+        if (finish.Type != FrameType.PairFinish || !spake.Verify(Convert.FromBase64String(finish.As<PairFinishMessage>().Confirmation ?? "")))
+            throw new AuthenticationException("Eşleştirme kodu doğrulanamadı.");
+        lock (gate) if (pairing?.Code == code) pairing = null;
+        Changed?.Invoke();
+        Directory.AddOrUpdate(peerId, start.Name ?? "");
+        await Frame.WriteAsync(ssl, Frame.Empty(FrameType.PairAccepted), token);
+        Paired?.Invoke(peerId);
+    }
+
+    /// <summary>Returns the current code and counts one attempt; the last allowed attempt burns the code for later ones.</summary>
+    private string? TakePairingAttempt()
+    {
+        string? code = null;
         lock (gate)
         {
-            if (pairing is not { } p || p.Offer.Expires <= DateTimeOffset.UtcNow) { pairing = null; return false; }
-            ok = secret is { Length: PairingCode.SecretChars } &&
-                CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(secret), Encoding.ASCII.GetBytes(p.Secret));
-            // Single use; repeated wrong guesses burn the code.
-            pairing = ok || p.Attempts + 1 >= MaxPairingAttempts ? null : p with { Attempts = p.Attempts + 1 };
+            if (pairing is not { } p || p.Offer.Expires <= DateTimeOffset.UtcNow) pairing = null;
+            else
+            {
+                code = p.Code;
+                pairing = p.Attempts + 1 >= MaxPairingAttempts ? null : p with { Attempts = p.Attempts + 1 };
+            }
         }
         Changed?.Invoke();
-        return ok;
+        return code;
     }
 
     private async Task ConnectLoop(CancellationToken token)

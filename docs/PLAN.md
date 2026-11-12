@@ -19,7 +19,7 @@ Kurulum örneği (geliştirme ortamı):
 Eski F12 ile elle açılan alıcı/gönderici modeli kalkar. Her bilgisayar aynı uygulamayı çalıştırır, hem kontrol eden hem kontrol edilen olabilir.
 
 1. **Kalıcı cihaz kimliği ve tek seferlik eşleştirme**
-   Her bilgisayarın Windows anahtar deposunda dışa aktarılamayan kalıcı bir anahtarı olur. Eşleştirme kodu 133 yerine 20 karakterdir (`XXXXX-XXXXX-XXXXX-XXXXX`), bir kez girilir ve 5 dakika geçerlidir. Eşleşen cihazlar hatırlanır, açılışta kendiliğinden bağlanır. Bağlantı karşılıklı TLS ile kurulur ve iki taraf da birbirinin sertifikasını sabitler.
+   Her bilgisayarın Windows anahtar deposunda dışa aktarılamayan kalıcı bir anahtarı olur. 0.4.0'dan beri eşleştirme kodu 6 rakamdır ve her gösterimde yenilenir. Kod, iki sertifikaya bağlı bir SPAKE2 değişiminin parolasıdır; bir kez girilir ve 5 dakika geçerlidir. Eşleşen cihazlar hatırlanır, açılışta kendiliğinden bağlanır. Bağlantı karşılıklı TLS ile kurulur ve iki taraf da birbirinin sertifikasını sabitler.
 2. **Ağda otomatik bulma**
    UDP yayınıyla aynı ağdaki Banko Share cihazları listelenir; IP adresi elle de girilebilir.
 3. **Monitör bilgisi alışverişi**
@@ -41,7 +41,7 @@ Eski F12 ile elle açılan alıcı/gönderici modeli kalkar. Her bilgisayar ayn�
 
 **Kabul ölçütü:** İki bilgisayarda A↔C geçişi her yönde çalışmalı. 30 dakikalık kullanımda takılı tuş, kayıp tık, sıçrama veya kontrol kaybı olmamalı.
 
-## Aşama 2 — Geçiş ayarları (master'da, henüz yayımlanmadı)
+## Aşama 2 — Geçiş ayarları (v0.4.0, iki bilgisayarda sınanacak)
 
 Hepsi varsayılan olarak kapalıdır; açılmadıkça 0.3.0 davranışı değişmez. Ayarlar her bilgisayarda ayrıdır ve o bilgisayarın faresi kullanılırken geçerlidir.
 

@@ -322,7 +322,7 @@ public sealed class ShareController : IDisposable
                 lock (gate) { if (engine.ActivePeer == id) { engine.ForceLocal(fx); Flush(); } }
                 break;
             // Late pairing traffic carries no meaning once the link is up.
-            case FrameType.PairRequest or FrameType.PairAccepted:
+            case FrameType.LegacyPairRequest or FrameType.PairAccepted or FrameType.PairStart or FrameType.PairReply or FrameType.PairFinish:
                 break;
         }
     }

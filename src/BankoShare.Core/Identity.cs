@@ -38,50 +38,24 @@ public sealed class DeviceIdentity(X509Certificate2 certificate) : IDisposable
 }
 
 /// <summary>
-/// One-time pairing code shown by the device being added: 13 Crockford base32 characters of its
-/// certificate fingerprint (65 bits) followed by a 7-character secret (35 bits).
-/// The connecting side checks the fingerprint prefix before it reveals the secret, so a
-/// man-in-the-middle never learns it; online guesses are limited to a few attempts per code.
+/// One-time 6-digit pairing code, fresh every time it is shown. A short code is safe only because it is
+/// never sent or used directly: it is the password of a SPAKE2 exchange (<see cref="Spake2"/>), so each
+/// connection attempt can test a single guess and a few wrong attempts burn the code.
 /// </summary>
 public static class PairingCode
 {
-    public const int FingerprintChars = 13, SecretChars = 7, Length = FingerprintChars + SecretChars;
-    private const string Alphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+    public const int Digits = 6;
 
-    public static string Create(string deviceId, out string secret)
+    public static string Create() => RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>"482913" → "482 913", easier to read aloud and type.</summary>
+    public static string Format(string code) => code[..3] + " " + code[3..];
+
+    /// <summary>Accepts spaces and dashes. Throws <see cref="FormatException"/> with a message for the user.</summary>
+    public static string Parse(string text)
     {
-        secret = string.Concat(Enumerable.Range(0, SecretChars).Select(_ => Alphabet[RandomNumberGenerator.GetInt32(Alphabet.Length)]));
-        var raw = FingerprintPrefix(deviceId) + secret;
-        return string.Join('-', Enumerable.Range(0, 4).Select(i => raw.Substring(i * 5, 5)));
-    }
-
-    public static (string FingerprintPrefix, string Secret) Parse(string code)
-    {
-        var chars = new List<char>(Length);
-        foreach (var raw in code.ToUpperInvariant())
-        {
-            if (raw is '-' or ' ' or '\t') continue;
-            var c = raw switch { 'O' => '0', 'I' or 'L' => '1', _ => raw };
-            if (!Alphabet.Contains(c)) throw new FormatException("Kodda geçersiz karakter var.");
-            chars.Add(c);
-        }
-        if (chars.Count != Length) throw new FormatException("Eşleştirme kodu 20 karakter olmalı.");
-        var s = new string([.. chars]);
-        return (s[..FingerprintChars], s[FingerprintChars..]);
-    }
-
-    public static bool Matches(string deviceId, string fingerprintPrefix) => FingerprintPrefix(deviceId) == fingerprintPrefix;
-
-    private static string FingerprintPrefix(string deviceId)
-    {
-        var bytes = Convert.FromHexString(deviceId);
-        var result = new char[FingerprintChars];
-        for (var i = 0; i < FingerprintChars; i++)
-        {
-            int bit = i * 5, value = 0;
-            for (var b = 0; b < 5; b++, bit++) value = (value << 1) | ((bytes[bit / 8] >> (7 - bit % 8)) & 1);
-            result[i] = Alphabet[value];
-        }
-        return new string(result);
+        var digits = new string([.. text.Where(c => !char.IsWhiteSpace(c) && c != '-')]);
+        if (digits.Length != Digits || !digits.All(char.IsAsciiDigit)) throw new FormatException("Eşleştirme kodu 6 rakam olmalı.");
+        return digits;
     }
 }

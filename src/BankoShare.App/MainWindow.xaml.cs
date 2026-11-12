@@ -204,6 +204,13 @@ public partial class MainWindow : Window
 
     private void CancelCode_Click(object sender, RoutedEventArgs e) { host?.Network.ClosePairing(); RefreshPairing(null); }
 
+    private void CodeBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || !PairButton.IsEnabled) return;
+        e.Handled = true;
+        Pair_Click(sender, e);
+    }
+
     private void Discovered_Selected(object sender, SelectionChangedEventArgs e)
     {
         if (updatingUi || (DiscoveredList.SelectedItem as ListBoxItem)?.Tag is not DiscoveredDevice d) return;

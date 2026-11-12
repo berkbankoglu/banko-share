@@ -1,3 +1,4 @@
+using System.Numerics;
 using BankoShare.Core;
 
 internal static class ProtocolTests
@@ -53,21 +54,76 @@ internal static class ProtocolTests
             T.Throws<InvalidDataException>(() => new Frame(FrameType.Hello, "{"u8.ToArray()).As<HelloMessage>());
             await T.ThrowsAsync<EndOfStreamException>(() => Frame.ReadAsync(new MemoryStream([Frame.Version, (byte)FrameType.Input, 16, 0, 1]), default));
         });
-        s.Test("Pairing codes are short, forgiving to type, and bound to the certificate", () =>
+        await s.TestAsync("Pairing codes are six fresh digits and forgiving to type", async () =>
         {
-            var code = PairingCode.Create(Fixtures.LocalId, out var secret);
-            T.Check(System.Text.RegularExpressions.Regex.IsMatch(code, "^[0-9A-Z]{5}(-[0-9A-Z]{5}){3}$"), "Unexpected format: " + code);
-            var (prefix, parsedSecret) = PairingCode.Parse(code.ToLowerInvariant().Replace("-", " "));
-            T.Check(parsedSecret == secret && PairingCode.Matches(Fixtures.LocalId, prefix), "Parse mismatch");
-            T.Check(!PairingCode.Matches(Fixtures.RemoteId, prefix), "Prefix matched another device");
-            T.Check(PairingCode.Parse(new string('0', 64)[..20]).FingerprintPrefix == "0000000000000", "Zero prefix");
-            T.Check(PairingCode.Matches(new string('0', 64), "0000000000000") && PairingCode.Matches(new string('F', 64), "ZZZZZZZZZZZZZ"), "Base32 bits");
-            T.Check(PairingCode.Parse("OOOOO-IIIII-LLLLL-00000").FingerprintPrefix == "0000011111111", "Look-alike letters not mapped");
-            T.Throws<FormatException>(() => PairingCode.Parse("ABCDE-ABCDE"));
-            T.Throws<FormatException>(() => PairingCode.Parse("UUUUU-UUUUU-UUUUU-UUUUU"));
-            T.Check(PairingCode.Create(Fixtures.LocalId, out _) != code, "Secret reused");
+            var code = PairingCode.Create();
+            T.Check(System.Text.RegularExpressions.Regex.IsMatch(code, "^[0-9]{6}$"), "Unexpected format: " + code);
+            T.Equal(code[..3] + " " + code[3..], PairingCode.Format(code), "Display format");
+            T.Equal("012345", PairingCode.Parse(" 012 345 "), "Spaces");
+            T.Equal("012345", PairingCode.Parse("012-345"), "Dash");
+            foreach (var bad in (string[])["12345", "1234567", "12345a", "١٢٣٤٥٦", ""])
+                T.Throws<FormatException>(() => PairingCode.Parse(bad));
+            var many = Enumerable.Range(0, 50).Select(_ => PairingCode.Create()).ToHashSet();
+            T.Check(many.Count >= 45, "Codes repeat: " + many.Count);
+            await T.ThrowsAsync<InvalidDataException>(() => Raw(Frame.Version, (byte)FrameType.LegacyPairRequest, 10));
+        });
+        s.Test("SPAKE2 agrees only on the same code and the same two certificates", () =>
+        {
+            static (Spake2 C, Spake2 S) Run(string clientCode, string serverCode, string clientSeesServer = "S", string serverSeesClient = "C")
+            {
+                var c = Spake2.Client(clientCode, "C", clientSeesServer);
+                var sv = Spake2.Server(serverCode, serverSeesClient, "S");
+                c.Receive(sv.Message); sv.Receive(c.Message);
+                return (c, sv);
+            }
+            var (c1, s1) = Run("482913", "482913");
+            T.Check(c1.Verify(s1.Confirmation) && s1.Verify(c1.Confirmation), "Same code did not agree");
+            T.Check(!c1.Message.SequenceEqual(Spake2.Client("482913", "C", "S").Message), "Messages repeat");
+            var (c2, s2) = Run("482913", "482914");
+            T.Check(!c2.Verify(s2.Confirmation) && !s2.Verify(c2.Confirmation), "Different codes agreed");
+            // A relay between two TLS sessions: each side sees the relay's certificate instead of the other's.
+            var (c3, s3) = Run("482913", "482913", clientSeesServer: "RELAY", serverSeesClient: "RELAY");
+            T.Check(!c3.Verify(s3.Confirmation) && !s3.Verify(c3.Confirmation), "Relayed exchange agreed");
+            T.Check(!c1.Verify(new byte[32]) && !c1.Verify([]), "Forged confirmation accepted");
+        });
+        s.Test("SPAKE2 runs in a safe-prime group and rejects elements outside it", () =>
+        {
+            T.Check(ProbablePrime(Spake2.P, 12) && ProbablePrime(Spake2.Q, 12), "p or q is not prime");
+            T.Equal(2048L, (long)Spake2.P.GetBitLength(), "Group size");
+            foreach (var e in (BigInteger[])[Spake2.G, Spake2.M, Spake2.N])
+                T.Check(e > 1 && BigInteger.ModPow(e, Spake2.Q, Spake2.P) == 1, "Generator or blinding element outside the subgroup");
+            T.Check(Spake2.M != Spake2.N, "M equals N");
+            var server = Spake2.Server("000000", "C", "S");
+            foreach (var bad in (BigInteger[])[0, 1, Spake2.P - 1, Spake2.P, Spake2.P - 4])
+                T.Throws<InvalidDataException>(() => server.Receive(Fixed(bad)));
+            T.Throws<InvalidDataException>(() => server.Receive(new byte[255]));
         });
         return s.Count;
+    }
+
+    private static byte[] Fixed(BigInteger value)
+    {
+        var raw = value.ToByteArray(isUnsigned: true, isBigEndian: true);
+        var result = new byte[Spake2.ElementBytes];
+        if (raw.Length <= result.Length) raw.CopyTo(result, result.Length - raw.Length);
+        return result;
+    }
+
+    /// <summary>Miller–Rabin with random bases.</summary>
+    private static bool ProbablePrime(BigInteger n, int rounds)
+    {
+        var d = n - 1; var r = 0;
+        while (d.IsEven) { d >>= 1; r++; }
+        for (var i = 0; i < rounds; i++)
+        {
+            var a = new BigInteger(System.Security.Cryptography.RandomNumberGenerator.GetBytes(64), isUnsigned: true) % (n - 3) + 2;
+            var x = BigInteger.ModPow(a, d, n);
+            if (x == 1 || x == n - 1) continue;
+            var witness = true;
+            for (var j = 1; j < r && witness; j++) { x = BigInteger.ModPow(x, 2, n); if (x == n - 1) witness = false; }
+            if (witness) return false;
+        }
+        return true;
     }
 
     private static async Task<Frame> ReadOne(Frame frame)

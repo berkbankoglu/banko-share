@@ -43,11 +43,15 @@ public readonly record struct InputEvent(EventKind Kind, int A = 0, int B = 0, i
     }
 }
 
-public enum FrameType : byte { Heartbeat, Hello, Layout, Enter, Input, Leave, Reclaim, PairRequest, PairAccepted }
+/// <summary>LegacyPairRequest is the 0.3 pairing request; it is refused.</summary>
+public enum FrameType : byte { Heartbeat, Hello, Layout, Enter, Input, Leave, Reclaim, LegacyPairRequest, PairAccepted, PairStart, PairReply, PairFinish }
 
 /// <summary>Port is the sender's listening port; an inbound connection only reveals an ephemeral one.</summary>
 public sealed record HelloMessage(DeviceInfo Device, string Version, int Port);
-public sealed record PairRequestMessage(string Secret, string Name);
+/// <summary>SPAKE2 messages; byte fields are Base64.</summary>
+public sealed record PairStartMessage(string Element, string Name);
+public sealed record PairReplyMessage(string Element, string Confirmation);
+public sealed record PairFinishMessage(string Confirmation);
 
 /// <summary>
 /// Wire frame: version byte, type byte, little-endian payload length, payload.
@@ -114,7 +118,8 @@ public readonly record struct Frame(FrameType Type, byte[] Payload)
     {
         FrameType.Heartbeat or FrameType.Leave or FrameType.Reclaim or FrameType.PairAccepted => length == 0,
         FrameType.Enter or FrameType.Input => length == InputEvent.Size,
-        FrameType.Hello or FrameType.Layout or FrameType.PairRequest => length is > 0 and <= MaxPayload,
+        FrameType.Hello or FrameType.Layout => length is > 0 and <= MaxPayload,
+        FrameType.PairStart or FrameType.PairReply or FrameType.PairFinish => length is > 0 and <= 1024,
         _ => false
     };
 }

@@ -83,15 +83,18 @@
      <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="28"/><ColumnDefinition/></Grid.ColumnDefinitions>
      <StackPanel>
       <TextBlock Text="Bu bilgisayarı ekle" Style="{StaticResource Heading}"/>
-      <TextBlock Style="{StaticResource Note}" Text="Kodu gösterin ve diğer bilgisayardaki Banko Share'e girin. Kod 5 dakika geçerlidir ve bir kez kullanılır."/>
+      <TextBlock Style="{StaticResource Note}" Text="Kodu gösterin ve diğer bilgisayardaki Banko Share'e girin. Her basışta yeni kod üretilir; kod 5 dakika geçerlidir ve bir kez kullanılır."/>
       <Button x:Name="ShowCodeButton" Content="Eşleştirme kodu göster" Click="ShowCode_Click" HorizontalAlignment="Left" Margin="0,14,0,0"/>
       <StackPanel x:Name="CodePanel" Visibility="Collapsed" Margin="0,14,0,0">
-       <Border Background="#0B111C" CornerRadius="8" Padding="14,10" HorizontalAlignment="Left">
-        <TextBox x:Name="PairCodeText" IsReadOnly="True" FontFamily="Consolas" FontSize="24" FontWeight="Bold" Foreground="#83E3CB"
+       <Border Background="#0B111C" CornerRadius="8" Padding="18,10" HorizontalAlignment="Left">
+        <TextBox x:Name="PairCodeText" IsReadOnly="True" FontFamily="Consolas" FontSize="36" FontWeight="Bold" Foreground="#83E3CB"
          Background="Transparent" BorderThickness="0" Padding="0" Margin="0" AutomationProperties.Name="Eşleştirme kodu"/>
        </Border>
        <TextBlock x:Name="PairExpiryText" Style="{StaticResource Note}"/>
-       <Button Content="Kodu iptal et" Style="{StaticResource Secondary}" Click="CancelCode_Click" HorizontalAlignment="Left"/>
+       <WrapPanel>
+        <Button Content="Yeni kod" Style="{StaticResource Secondary}" Click="ShowCode_Click"/>
+        <Button Content="Kodu iptal et" Style="{StaticResource Secondary}" Click="CancelCode_Click"/>
+       </WrapPanel>
       </StackPanel>
      </StackPanel>
      <StackPanel Grid.Column="2">
@@ -101,8 +104,9 @@
        Background="#202D42" Foreground="#EAF1FF" BorderBrush="#40516B"/>
       <TextBlock Text="IP adresi" Margin="0,10,0,0"/>
       <TextBox x:Name="AddressBox" AutomationProperties.Name="Diğer bilgisayarın IP adresi"/>
-      <TextBlock Text="Diğer bilgisayarda görünen kod"/>
-      <TextBox x:Name="CodeBox" FontFamily="Consolas" CharacterCasing="Upper" AutomationProperties.Name="Eşleştirme kodu girişi"/>
+      <TextBlock Text="Diğer bilgisayarda görünen 6 haneli kod"/>
+      <TextBox x:Name="CodeBox" FontFamily="Consolas" FontSize="20" MaxLength="9" Width="160" HorizontalAlignment="Left"
+       KeyDown="CodeBox_KeyDown" AutomationProperties.Name="Eşleştirme kodu girişi"/>
       <Button x:Name="PairButton" Content="Eşleştir" Click="Pair_Click" HorizontalAlignment="Left" Margin="0,0,10,0"/>
       <TextBlock x:Name="PairStatusText" Style="{StaticResource Note}"/>
      </StackPanel>

@@ -1,6 +1,23 @@
 # Doğrulama kayıtları ve kabul testleri
 
-## Aşama 2 (geçiş ayarları) — 12.11.2026, master, yayımlanmadı
+## 6 haneli eşleştirme (SPAKE2) — 12.11.2026, v0.4.0
+
+**Neden:** 20 karakterlik kodun ilk 13 karakteri cihazın parmak izi olduğu için kod her seferinde aynı görünüyordu ve yazması zahmetliydi.
+
+**Otomatik testler:** Toplam 54 test geçti; üç ardışık çalıştırmada da sonuç aynı. Eşleştirme testleri:
+
+- **Grup:** RFC 3526 2048 bitlik grubun p ve q = (p−1)/2 değerleri Miller–Rabin testinde asal çıktı. g, M ve N alt gruptadır.
+- **Geçersiz değerler:** 0, 1, p−1, p, alt grup dışı p−4 ve yanlış uzunluk reddedilir.
+- **Anlaşma:** Aynı kodla iki taraf anlaşır. Farklı kodla da, araya giren bir aracının gördüğü farklı sertifikalarla da anlaşamaz. Sahte onay kabul edilmez.
+- **Kod biçimi:** 6 rakam. Boşluk ve tire kabul edilir; başka karakterler reddedilir. Arka arkaya üretilen 50 kod büyük ölçüde farklıdır.
+- **Eski protokol:** 0.3 eşleştirme isteği reddedilir.
+- **Gerçek TLS ile (loopback):**
+  - Doğru kodla eşleşme olur.
+  - 5 yanlış deneme kodu iptal eder.
+  - Kendi sertifikasıyla araya giren ve doğru kodu ileten bir aracı eşleşemez; kimse aracının sertifikasını kaydetmez.
+  - Aynı kod, aracısız bağlantıda hâlâ çalışır.
+
+## Aşama 2 (geçiş ayarları) — 12.11.2026, v0.4.0
 
 **Otomatik testler:** 52 test geçti; altı ardışık çalıştırmada da sonuç aynı. Uygulama sıfır uyarıyla derlendi. Yeni testler:
 

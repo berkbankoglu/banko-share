@@ -1,20 +1,29 @@
-## Banko Share 0.3.0 — ekran kenarından geçiş
+## Banko Share 0.4.0: 6 haneli eşleştirme kodu ve geçiş ayarları
 
-İki bilgisayara da **BankoShare-win-Setup.exe** kurun. Varlık adı paketleyici sürümüne göre `BankoShare-Setup.exe` olabilir. 0.2.0 kuruluysa güncelleme kendiliğinden gelir.
+**İki bilgisayar da 0.4.0 olmalı.** Eşleştirme yöntemi değişti; 0.3.0 ile 0.4.0 birbiriyle eşleşemez. 0.3.0 kuruluysa güncelleme kendiliğinden gelir. Beklemek istemezseniz **Güncellemeler → Şimdi kontrol et** seçin. İlk kurulum için **BankoShare-win-Setup.exe** dosyasını kullanın.
 
 ### Yeni
 
-- **Kenardan geçiş:** İmleci diğer bilgisayara değen kenara itin; imleç ve klavye oraya geçer, aynı yoldan geri döner. Eski F12 ile elle açılan mod kaldırıldı.
-- **Monitör düzeni:** Bütün bilgisayarların monitörleri tek ekranda görünür. Sürükleyip kenara yapıştırın; düzen iki bilgisayarda aynı kalır.
-- **Kalıcı eşleştirme:** 20 karakterlik kod bir kez girilir. Cihazlar hatırlanır ve açılışta kendiliğinden bağlanır. Aynı ağdaki cihazlar listede görünür.
-- **Akıcı ve doğru fare:** Karşı tarafa mutlak konum gönderilir; ivme iki kez uygulanmaz. Kancalar arayüzden bağımsız çalışır. Farklı DPI'lı monitörlerde fiziksel piksel kullanılır.
-- **Güvenlik ağları:** Esc'e iki kez basınca kontrol geri gelir. Karşı bilgisayarın faresi oynatılınca kontrol ona geçer. Bağlantı kopması, ekran kilidi veya uyku durumunda imleç eve döner ve basılı tuşlar bırakılır.
+- **6 haneli eşleştirme kodu:** "Eşleştirme kodu göster" ve "Yeni kod" düğmeleri her basışta yeni bir kod üretir. Kod 5 dakika geçerlidir ve bir kez kullanılır.
+  - Kod ağda hiç gönderilmez. SPAKE2 yöntemiyle iki taraf aynı kodu bildiğini, kodu açık etmeden kanıtlar.
+  - Ağdaki biri kodu deneme-yanılmayla çözemez. Her bağlantı denemesi yalnızca tek bir tahmine izin verir ve 5 yanlış denemede kod iptal olur.
+  - Araya girip iki bilgisayar arasında aracılık eden biri doğru kodu iletse bile eşleştirme başarısız olur.
+- **Geçiş ayarları:** Hepsi kapalı başlar; açılmadıkça 0.3.0 davranışı değişmez.
+  - **Ekran boyutlarını eşitle:** Kenarın her yerinden, orantılı geçiş.
+  - **İmleci ekranların etrafında döndür.**
+  - **Geçişi engelle:** Tam ekran veya büyütülmüş pencere öndeyken, ekran köşelerinde, Shift/Ctrl/sol Alt basılı değilken veya listedeki programlar öndeyken geçiş yapılmaz. Engellenince durum çubuğu nedeni yazar.
+  - **Kenara çift dokunma:** Engel varken iki dokunuşla geçilir. İsterseniz her geçiş iki dokunuş ister.
+  - **Kısayollar:** Geçişi aç/kapat, sonraki bilgisayar, bu bilgisayara dön ve Ctrl + sol Alt (ya da Ctrl + Shift) + rakam ile monitöre atlama. AltGr kısayol sayılmaz; @, # gibi karakterler etkilenmez.
+
+### Düzeltmeler
+
+- Ayar dosyası başka bir program tarafından (örneğin virüs tarayıcısı) kısa süre açık tutulduğunda değişiklik kaydedilmiyordu. Artık kayıt yeniden deneniyor ve arka planda yapılıyor; fare hiçbir zaman diske yazılmasını beklemiyor.
 
 ### Kurulum
 
-1. ShareMouse gibi başka bir paylaşım uygulaması açıksa iki bilgisayarda da kapatın.
-2. Windows güvenlik duvarı sorarsa **özel ağ** için izin verin.
-3. Bir bilgisayarda **Eşleştirme kodu göster**, diğerinde cihazı seçip kodu girin.
+1. İki bilgisayarda da ShareMouse gibi başka bir paylaşım uygulaması açıksa kapatın.
+2. Windows güvenlik duvarı sorarsa izin verin.
+3. Bir bilgisayarda **Eşleştirme kodu göster** seçin. Diğerinde listeden onu seçip 6 rakamı girin ve **Eşleştir** seçin.
 4. **Monitör düzeni** sayfasında yerleşimi ayarlayın.
 
 Bu bir geliştirme önizlemesidir. Windows kod imzalama sertifikası henüz yoktur.

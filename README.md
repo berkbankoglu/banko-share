@@ -15,8 +15,8 @@ Yol haritası: [docs/PLAN.md](docs/PLAN.md).
 ## İlk kurulum
 
 1. İki bilgisayarda Banko Share'i açın. Aynı anda ShareMouse gibi başka bir fare paylaşım uygulaması çalışıyorsa kapatın.
-2. Eklenecek bilgisayarda **Cihazlar → Eşleştirme kodu göster** seçin. 20 karakterlik kod 5 dakika geçerlidir ve bir kez kullanılır.
-3. Diğer bilgisayarda **Ağda bulunan Banko Share cihazları** listesinden onu seçin (veya IP adresini yazın), kodu girip **Eşleştir** seçin.
+2. Eklenecek bilgisayarda **Cihazlar → Eşleştirme kodu göster** seçin. Her basışta yeni bir 6 haneli kod çıkar. Kod 5 dakika geçerlidir ve bir kez kullanılır.
+3. Diğer bilgisayarda **Ağda bulunan Banko Share cihazları** listesinden onu seçin (veya IP adresini yazın), 6 rakamı girip **Eşleştir** seçin. İki bilgisayarda da 0.4.0 veya üstü olmalıdır.
 4. **Monitör düzeni** sayfasında monitörleri masanızdaki yerleşime göre sürükleyin. Bir bilgisayarın monitörleri birlikte taşınır ve yakındaki kenara yapışır. Düzen iki bilgisayarda aynı kalır.
 5. İmleci, düzende diğer bilgisayara değen kenara itin.
 
@@ -42,7 +42,10 @@ Eşleştirme kalıcıdır. Sonraki açılışlarda iki uygulama birbirini bulup 
 - Windows'un düşük seviye fare kancası kenara itilen imleç için kenarın ötesindeki noktayı bildirir. Geçiş buna ve paylaşılan monitör düzenine göre belirlenir.
 - İmleç diğer bilgisayardayken yerel imleç ana ekranın ortasında görünmez biçimde bekletilir. Hareket farkları karşı bilgisayara **mutlak konum** olarak gönderilir; böylece fare ivmesi iki kez uygulanmaz. Ağ yoğunlaştığında araya giren konumlar birleştirilir.
 - Her cihazın, Windows anahtar deposunda dışa aktarılamayan kalıcı bir RSA anahtarı ve kendinden imzalı sertifikası vardır. Sertifikanın SHA-256 parmak izi cihaz kimliğidir.
-- Bağlantılar karşılıklı TLS 1.2/1.3 ile kurulur ve iki taraf da birbirinin parmak izini sabitler. Eşleştirme kodu, parmak izinin 65 bitini ve 35 bitlik tek kullanımlık bir sırrı taşır. Bağlanan taraf sırrı yalnızca parmak izi eşleşirse gönderir. Kod 5 yanlış denemede iptal olur.
+- Bağlantılar karşılıklı TLS 1.2/1.3 ile kurulur ve iki taraf da birbirinin parmak izini sabitler.
+- Eşleştirme kodu 6 rakamdır ve ağda hiç gönderilmez. Kod, SPAKE2 parola doğrulamalı anahtar değişiminin parolasıdır. Grup, RFC 3526'daki 2048 bitlik güvenli asal grubudur.
+  - Değişim, iki tarafın TLS sertifika parmak izlerine bağlıdır. Araya giren biri doğru kodu iletse bile eşleştirme başarısız olur.
+  - Ağdaki bir saldırgan kodu bilgisayarında deneme-yanılmayla çözemez. Her bağlantı denemesi tek bir tahmine izin verir ve 5 denemede kod iptal olur.
 - Ağda bulma UDP 24820 yayınıyla yapılır. Bu yalnızca adres ipucudur; güven her zaman sabitlenmiş sertifikadan gelir. Bağlantılar TCP 24819 üzerindendir.
 - Her bağlantıda 0,5 sn'de bir kalp atışı gider; 3 sn sessizlik bağlantıyı kapatır. Kopan bağlantılar artan bekleme süreleriyle yeniden kurulur.
 - Hesap, bulut sunucusu, telemetri, tuş kaydı veya otomatik başlangıç yoktur.
