@@ -169,6 +169,9 @@ public sealed class ShareController : IDisposable
     /// <summary>The peer our pointer is on, if any.</summary>
     public string? ControllingPeer { get { lock (gate) return engine.ActivePeer; } }
 
+    /// <summary>The peer whose pointer is on this machine, if any.</summary>
+    public string? ControlledByPeer { get { lock (gate) return controlledBy; } }
+
     public string? PeerVersion(string id) { lock (gate) return peerVersions.GetValueOrDefault(id); }
 
     /// <summary>Asks every connected 0.5+ peer for the tail of its diagnostic log (see <see cref="PeerLogReceived"/>).</summary>
@@ -433,6 +436,8 @@ public sealed class ShareController : IDisposable
         Diag.Write($"Kontrol geri alındı: {why} ({NameOfPeer(peer)} durduruldu)");
         ReleaseInjected();
         network.Send(peer, Frame.Empty(FrameType.Reclaim));
+        // That peer's pointer goes home: what was copied here should be there when it gets there.
+        handoffs.Add(peer);
     }
 
     private const string GameLockText = "Oyun öndeyken geçiş kilitli · Alt+Tab ile oyundan çıkınca geçebilirsiniz.";

@@ -17,13 +17,18 @@ internal readonly record struct CopiedClipboard(string? Text, string? Html, stri
 /// <summary>Reads and writes the Windows clipboard. UI (STA) thread only. Never throws for clipboard trouble.</summary>
 internal static class ClipboardIO
 {
-    public static CopiedClipboard? Read(bool includeFiles)
+    /// <summary>Another program kept the clipboard open; worth another try in a moment.</summary>
+    public const string Busy = "pano başka bir programda açık";
+
+    /// <param name="problem">Why nothing came back: <see cref="Busy"/>, or the formats on the clipboard when none is supported (names only, never content).</param>
+    public static CopiedClipboard? Read(bool includeFiles, out string? problem)
     {
+        problem = null;
         IDataObject? data = null;
         for (var attempt = 0; attempt < 5 && data == null; attempt++)
             try { data = Clipboard.GetDataObject(); }
             catch (Exception e) when (e is COMException or ExternalException) { Thread.Sleep(20); } // another program holds it for a moment
-        if (data == null) return null;
+        if (data == null) { problem = Busy; return null; }
         string? Text(string format)
         {
             try { return data.GetDataPresent(format) && data.GetData(format) is string s && s.Length is > 0 and <= ClipboardContent.MaxTextChars ? s : null; }
@@ -39,7 +44,12 @@ internal static class ClipboardIO
             catch (Exception e) when (e is COMException or ExternalException or OutOfMemoryException or InvalidOperationException or NotSupportedException or ArgumentException) { }
         if (image is { Length: > (int)ClipboardContent.MaxImageBytes }) image = null;
         var copied = new CopiedClipboard(Text(DataFormats.UnicodeText), Text(DataFormats.Html), Text(DataFormats.Rtf), image, paths is { Length: > 0 } ? paths : null);
-        return copied.IsEmpty ? null : copied;
+        if (!copied.IsEmpty) return copied;
+        string formats;
+        try { formats = string.Join(", ", data.GetFormats(false)); }
+        catch (Exception e) when (e is COMException or ExternalException) { formats = "okunamadı"; }
+        problem = formats.Length == 0 ? "pano boş" : $"desteklenen biçim yok ({formats})";
+        return null;
     }
 
     /// <summary>Puts received content on the clipboard; files as a copy-to-paste file list. False if the clipboard stayed busy.</summary>

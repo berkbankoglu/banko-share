@@ -1,5 +1,41 @@
 # Doğrulama kayıtları ve kabul testleri
 
+## Metin kopyala-yapıştır — 13.11.2026, v0.5.2
+
+**Bildirim:** Dosya aktarılıyordu, düz metin kopyalanıp yapıştırılamıyordu.
+
+**Kayıtlar (iki bilgisayar da 0.5.1):**
+
+- BANKOARTS'tan DESKTOP'a bir resim (05:58) ve bir PDF (06:05) gitti. DESKTOP ikisini de aldı.
+- DESKTOP hiçbir zaman pano göndermedi: on kez "kontrol bitti" var, ama bir gönderim ya da hata satırı yok.
+- 0.5.1'de "gönderilmedi" kararları ve bazı aktarım hataları kayda yazılmıyordu. Bu yüzden DESKTOP'taki kesin neden kayıttan çıkarılamadı.
+- DESKTOP'ta ShareMouse 05:01'de ve 05:34'te kapatıldıktan 8 saniye sonra yeniden açıldı; o süre boyunca Banko Share duraklatıldı. 05:58'den beri kapalı.
+
+**Gerçek uygulamada yeniden üretme (BANKOARTS):**
+
+- Kurulum:
+  - Test kopyasında kenardan geçiş kapalıydı.
+  - Diğer bilgisayar rolünü loopback üzerinden eşleşen bir test eşi oynadı.
+  - Test eşi imleci hiç oynatmadı: "gir" mesajı imlecin bulunduğu noktayı taşıdı.
+  - Kullanıcının pano metni saklanıp geri kondu.
+- 0.5.1'de iki eksik görüldü:
+  - Kontrol edilen bilgisayarın kendi faresi devreye girince orada kopyalanan metin hiç gönderilmedi.
+  - Oturum sürerken kopyalanan metin ancak imleç dönünce gidiyordu.
+- 0.5.2, üç çalıştırmada beş kontrolün hepsini geçti:
+  - Kopyalanınca anında gönderim (imleç hâlâ oradayken, 34 ms).
+  - Kontrol geri alınınca gönderim.
+  - Kopyalayıp hemen geçişte gönderim.
+  - Gelen metin panoya yazıldı ve geri yollanmadı.
+
+**Otomatik testler:** 68 test. Yeniler:
+
+- Kontrol edilen bilgisayarın kendi faresi devreye girince, panosu kontrolü kaybeden bilgisayara gider.
+- Pano defteri:
+  - Her kopya her bilgisayara bir kez gider ve kaynağına geri dönmez.
+  - Başarısız gönderim bir sonraki geçişte yeniden denenir.
+  - Eski bir hata yeni bir gönderimi geri almaz.
+  - Geçişten hemen sonraki kopya süresi 3 saniyedir.
+
 ## Oyun kilidi — 13.11.2026, v0.5.1
 
 **İstek:** Oyun açıkken geçiş yalnızca Alt+Tab ile oyundan çıkınca yapılabilsin; oyundayken geçiş olmasın; bunun bir kilit ayarı olsun.

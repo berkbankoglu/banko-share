@@ -50,6 +50,8 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // Before anything creates the window handle (the clipboard watcher does), or the dark title bar is never applied.
+        SourceInitialized += (_, _) => DarkTitleBar.Apply(this);
         updater = new UpdateCoordinator(updates) { Automatic = UpdatePreferences.Load().Automatic };
         VersionText.Text = UpdateVersionText.Text = $"v{updater.CurrentVersion}";
         AutoUpdate.IsChecked = updater.Automatic;
@@ -100,7 +102,6 @@ public partial class MainWindow : Window
             if (updater.Automatic) await updater.CheckAsync(lifetime.Token);
             else UpdateStatus.Text = "Otomatik güncelleme kapalı.";
         });
-        SourceInitialized += (_, _) => DarkTitleBar.Apply(this);
         Closing += (_, e) =>
         {
             if (exiting) return;

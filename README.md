@@ -33,10 +33,14 @@ Eşleştirme kalıcıdır. Sonraki açılışlarda iki uygulama birbirini bulup 
   - Sağ tık menüsünde kenardan geçiş, bu bilgisayara dönme, Windows ile başlatma ve **Çıkış** vardır.
   - Kurulu sürüm Windows açılınca bildirim alanında başlar. Bu, **Uygulama** sayfasından kapatılabilir.
 - **Pano ve dosyalar:** Kopyaladığınız şey imleçle birlikte diğer bilgisayara geçer; orada Ctrl+V ile yapıştırılır. İmleç geri gelince orada kopyalanan da buraya gelir.
+  - İmleç diğer bilgisayardayken orada kopyalanan metin ve resim hemen bu bilgisayara da gelir.
+  - Kontrol edilen bilgisayarın kendi faresi devreye girerse, oradaki pano da imlecin döndüğü bilgisayara gider.
+  - Kopyalar Windows'un pano sıra numarasıyla izlenir; bir değişiklik bildirimi kaçsa bile kopya imleçle birlikte gider.
   - Metin, HTML, RTF ve resim desteklenir.
   - Dosya ve klasörler Gezgin'de kopyalanıp diğer bilgisayarda yapıştırılır; bir seferde en fazla 8 GB ve 50.000 öğe.
   - Gelen dosyalar yapıştırılana kadar `%LocalAppData%\BankoShare.Settings\Alınan dosyalar` içinde bekler; üç günden eskiler silinir.
-  - Uygulama açılmadan önce kopyalanmış içerik paylaşılmaz; gelen içerik geldiği bilgisayara geri gönderilmez.
+  - Dosyalar büyük olabileceği için yalnızca imleç diğer bilgisayara geçince gider.
+  - Gelen içerik geldiği bilgisayara geri gönderilmez.
 - **Başka paylaşım programı:** ShareMouse, Synergy, Barrier, Input Leap, Deskflow veya Mouse Without Borders açıkken Banko Share kendini duraklatır ve nedenini yazar. İki program aynı fareyi yönetirse sürükleme ve tıklamalarda imleç donar. Diğer program kapanınca Banko Share kendiliğinden devam eder.
 - **Oyun kilidi** (**Geçiş ayarları** sayfası, varsayılan olarak açık): Oyun öndeyken imleç ve klavye o bilgisayarda kalır. Diğer bilgisayara geçmek için Alt+Tab ile oyundan çıkılır; oyuna dönünce kilit yeniden devreye girer.
   - VALORANT ve League of Legends her zaman kilitlenir; başka oyunlar listeye eklenebilir. Yalnızca Riot istemcisinin açık olması yetmez.

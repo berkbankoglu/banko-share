@@ -9,7 +9,7 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <Version>0.5.1</Version>
+    <Version>0.5.2</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <StartupObject>BankoShare.App.App</StartupObject>
     <OutputType>WinExe</OutputType>

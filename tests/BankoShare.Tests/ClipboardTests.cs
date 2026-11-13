@@ -127,6 +127,32 @@ internal static class ClipboardTests
             pair.A.Controller.OnMouseMove(anchor + new PointI(0, 20), anchor, false);
             await T.Eventually(() => { lock (fromB) return fromB.SequenceEqual([pair.A.Id]); }, "B handed off when the pointer went back");
             T.Check(pair.A.Controller.Snapshot().Peers.Single().Version == "test", "Peer version not shown");
+            // In again; this time someone at B takes B's own mouse: A's pointer goes home, so B's clipboard goes to A.
+            T.Check(pair.A.Controller.WaitForInput(TimeSpan.FromSeconds(2)), "Return home still queued");
+            pair.A.Controller.OnMouseMove(new(1000, -6), new(1000, 0), false);
+            await T.Eventually(() => pair.B.Controller.ControlledByPeer == pair.A.Id, "entered again");
+            pair.B.Controller.OnMouseMove(new(900, 900), new(880, 900), false);
+            await T.Eventually(() => pair.A.Controller.ControllingPeer == null, "B's own mouse took over");
+            lock (fromB) T.Check(fromB.SequenceEqual([pair.A.Id, pair.A.Id]), "B did not hand off when its own mouse took over: " + fromB.Count);
+        });
+        s.Test("The clipboard ledger: a copy goes to each machine once, never back to its source, and is retried after a failure", () =>
+        {
+            var l = new ClipboardLedger(recentMs: 3000);
+            const string a = "A", b = "B", c = "C";
+            T.Check(!l.Has(a, 100), "A fresh start has sent nothing");
+            l.Sending(a, 100);
+            T.Check(l.Has(a, 100) && !l.Has(b, 100) && !l.Has(a, 101), "Per machine and per copy");
+            l.Failed(a, 100);
+            T.Check(!l.Has(a, 100), "A failed send is not retried");
+            l.Sending(a, 101); l.Failed(a, 100);
+            T.Check(l.Has(a, 101), "An old failure undid a newer send");
+            // Content from B was written here; the clipboard number after the write is 105.
+            l.Wrote(b, 105);
+            T.Check(l.Has(b, 105) && l.WrittenFrom(105) == b && l.WrittenFrom(106) == null, "Own write not recognised");
+            T.Check(!l.Has(c, 105), "A third machine must still get B's content");
+            T.Check(l.RecentHandOff(0) == null, "No hand-off yet");
+            l.HandedOff(c, 1000);
+            T.Check(l.RecentHandOff(3500) == c && l.RecentHandOff(4001) == null, "Recent hand-off window");
         });
         await s.TestAsync("A peer's diagnostic log can be fetched over the link", async () =>
         {

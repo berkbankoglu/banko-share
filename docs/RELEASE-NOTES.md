@@ -1,20 +1,15 @@
-## Banko Share 0.5.1: oyun kilidi
+## Banko Share 0.5.2: metin kopyala-yapıştır düzeltmesi
 
-Kurulu sürüm bu güncellemeyi kendiliğinden alır. Hemen almak için **Uygulama → Şimdi kontrol et** seçin.
+Kurulu sürüm bu güncellemeyi kendiliğinden alır. Hemen almak için **Uygulama → Şimdi kontrol et** seçin. Düzeltmenin iki yönde de çalışması için iki bilgisayarda da 0.5.2 olmalı.
 
-### Yeni
+### Düzeltmeler
 
-- **Oyun kilidi** (**Geçiş ayarları** sayfası, varsayılan olarak açık):
-  - Oyun öndeyken imleç ve klavye bu bilgisayarda kalır. İmleç kenardan kaçmaz, diğer bilgisayar da buraya geçemez.
-  - Diğer bilgisayara geçmek için **Alt+Tab** ile oyundan çıkın; kilit yaklaşık 0,4 saniyede açılır. Oyuna dönünce kilit hemen yeniden devreye girer.
-  - Kenara çift dokunma ve kısayollar (sonraki bilgisayar, monitöre atlama) kilidi aşamaz.
-  - İstenirse **Oyun açık olduğu sürece kilitle** seçilebilir; bu, 0.5.0'daki davranıştır.
-  - VALORANT ve League of Legends her zaman kilitlenir. Başka oyunlar **Kilitlenen oyunlar** listesine eklenebilir, ör. `cs2.exe`.
-- **Oyuna giriş gönderilmez:** Diğer bilgisayarın faresi ve klavyesi bir oyun penceresine hiç gitmez. Oyun öne gelirse ya da arkadaki oyun penceresine tıklanırsa imleç kendi bilgisayarına döner ve nedeni yazılır. Oyunun sürecine dokunulmaz.
-
-### Değişenler
-
-- Oyun kilidi ayarı **Uygulama** sayfasından **Geçiş ayarları** sayfasına taşındı.
-- Diğer bilgisayar kilitlendiğinde imleç buraya döner ve "… kilitlendi" bildirimi çıkar.
+- **Diğer bilgisayarda kopyalanan metin buraya geliyor:** İmleç diğer bilgisayardayken orada kopyaladığınız metin ve resim hemen bu bilgisayara da gelir. Önceden imleç geri dönerken tek bir anda gönderiliyordu; o an kaçınca metin hiç gelmiyordu.
+- **Kopyalar kaçmıyor:** Banko Share kopyaları artık Windows'un pano sıra numarasıyla izliyor. Değişiklik bildirimi gelmese bile kopya imleçle birlikte gider.
+- **Ctrl+C ve hızlı geçiş:** Kopyalayıp imleci hemen diğer bilgisayara götürseniz bile kopya imlecin peşinden gider.
+- **Kendi faresiyle kontrolü geri alma:** Kontrol edilen bilgisayarın kendi faresi devreye girerse, oradaki pano da imlecin döndüğü bilgisayara gider.
+- **Gelen içerik görünür:** Metin ya da resim gelince durum satırında "… geldi · Ctrl+V ile yapıştırabilirsiniz" yazar.
+- **Tanılama:** Panonun neden gönderilmediği (pano başka programda açık, desteklenmeyen biçim, eski sürüm) ve her aktarım hatası kayda yazılır. Panonun içeriği yazılmaz.
+- **Koyu başlık çubuğu:** Pencerenin başlık çubuğu artık koyu temaya uyuyor.
 
 Bu bir geliştirme önizlemesidir. Windows kod imzalama sertifikası henüz yoktur.
