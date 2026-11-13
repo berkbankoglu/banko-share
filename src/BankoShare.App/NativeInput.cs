@@ -59,6 +59,8 @@ internal static class Native
     [DllImport("user32.dll")] internal static extern nint WindowFromPoint(Point point);
     [DllImport("user32.dll")] internal static extern nint GetAncestor(nint hwnd, uint flags);
     [DllImport("user32.dll")] internal static extern bool IsIconic(nint hwnd);
+    [DllImport("user32.dll")] internal static extern bool GetClipCursor(out Rect rect);
+    [DllImport("user32.dll")] internal static extern int GetSystemMetrics(int index);
     [DllImport("user32.dll")] internal static extern uint MapVirtualKey(uint code, uint type);
 }
 
@@ -155,6 +157,8 @@ internal sealed class WindowsEnvironment(GameGuard games) : ISwitchEnvironment
     private const uint RootWindow = 2; // GA_ROOT
     private static readonly HashSet<string> ShellClasses = ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"];
     private readonly char[] buffer = new char[1024];
+    /// <summary>Last confinement logged, so a game holding the pointer is written down once, not on every push.</summary>
+    private (int, int, int, int) lastClip;
 
     public bool IsKeyDown(int vk) => (Native.GetAsyncKeyState(vk) & 0x8000) != 0;
 
@@ -162,6 +166,33 @@ internal sealed class WindowsEnvironment(GameGuard games) : ISwitchEnvironment
 
     public bool GameUnderCursor() =>
         Native.GetCursorPos(out var p) && games.IsGameWindow(Native.GetAncestor(Native.WindowFromPoint(p), RootWindow));
+
+    /// <summary>
+    /// Unconfined, the clip rectangle is the whole virtual screen. Games hold the pointer inside their window while
+    /// playing, windowed or not (WARDOGS: its monitor minus a pixel all round), and that is the one sign every game
+    /// gives without being named. Read only: the clip is never changed here.
+    /// </summary>
+    public bool CursorConfined()
+    {
+        if (!Native.GetClipCursor(out var clip)) return false;
+        int x = Native.GetSystemMetrics(76), y = Native.GetSystemMetrics(77); // SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN
+        int w = Native.GetSystemMetrics(78), h = Native.GetSystemMetrics(79); // SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN
+        var confined = w > 0 && h > 0 && (clip.Left > x || clip.Top > y || clip.Right < x + w || clip.Bottom < y + h);
+        var seen = confined ? (clip.Left, clip.Top, clip.Right, clip.Bottom) : default;
+        if (seen != lastClip)
+        {
+            lastClip = seen;
+            if (confined)
+                Diag.Write($"İmleç bir pencereye kapatılmış ({clip.Left},{clip.Top})-({clip.Right},{clip.Bottom}), ekran ({x},{y}) {w}x{h}; öndeki program: {ForegroundName() ?? "?"} · geçiş kilitli");
+        }
+        return confined;
+    }
+
+    private string? ForegroundName()
+    {
+        var hwnd = Native.GetForegroundWindow();
+        return hwnd == 0 ? null : ProcessName(hwnd);
+    }
 
     public BlockReason CheckForeground(RectI from, SwitchOptions options)
     {

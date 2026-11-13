@@ -10,8 +10,11 @@ public enum SwitchKey { None, Shift, Ctrl, Alt }
 
 public enum DoubleTapMode { Off, OverrideBlocks, Always }
 
-/// <summary>Why a push against an edge did not switch. Game is the game lock and can never be overridden.</summary>
-public enum BlockReason { None, Fullscreen, Maximized, Program, Corner, Key, DoubleTap, Game }
+/// <summary>
+/// Why a push against an edge did not switch. Game and Confined belong to the game lock and can never be
+/// overridden: Confined is the program in front holding the pointer inside its window, as games do while playing.
+/// </summary>
+public enum BlockReason { None, Fullscreen, Maximized, Program, Corner, Key, DoubleTap, Game, Confined }
 
 /// <summary>When the game lock holds sharing on this machine.</summary>
 public enum GameLockMode
@@ -140,6 +143,11 @@ public interface ISwitchEnvironment
     bool GameInFront();
     /// <summary>A locked game owns the window under the pointer: a click or wheel there would reach the game.</summary>
     bool GameUnderCursor();
+    /// <summary>
+    /// A program holds the pointer inside part of the screen (ClipCursor), as games do while playing even in a window.
+    /// The hooks still see the mouse push past that boundary, so this is asked before leaving.
+    /// </summary>
+    bool CursorConfined();
 }
 
 /// <summary>

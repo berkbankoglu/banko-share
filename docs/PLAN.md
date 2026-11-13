@@ -68,7 +68,8 @@ Hepsi varsayılan olarak kapalıdır; açılmadıkça 0.3.0 davranışı değiş
   - Oyun öndeyken geçiş kilitlidir; Alt+Tab ile oyundan çıkınca açılır. İsteğe bağlı olarak oyun açık olduğu sürece kilitli kalır.
   - Kilitliyken kancalar kaldırılır. Çift dokunma ve kısayollar kilidi aşamaz.
   - Diğer bilgisayardan gelen giriş bir oyun penceresine hiç gönderilmez.
-  - Kilitlenen oyunlar: VALORANT, League of Legends ve kullanıcının eklediği programlar.
+  - Kilitlenen oyunlar: VALORANT, League of Legends, kullanıcının eklediği programlar, Steam'in çalışıyor dediği oyun ve Windows'un oyun listesi (0.5.3).
+  - İmleci penceresinde tutan (ClipCursor) bir program öndeyken de geçilmez; adı bilinmeyen oyunlar da böylece kilitlenir (0.5.3).
 
 **Kabul ölçütü:** [TESTING.md](TESTING.md) içindeki Aşama 2 tablosu iki bilgisayarda geçmeli.
 

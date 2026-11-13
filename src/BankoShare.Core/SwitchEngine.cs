@@ -299,6 +299,7 @@ public sealed class SwitchEngine(DeviceInfo local, ScreenLayout layout)
             var o = Options;
             var foreground = source.Id != Local.Id || Environment == null ? BlockReason.None
                 : o.PauseForProtectedGames && Environment.GameInFront() ? BlockReason.Game
+                : o.PauseForProtectedGames && Environment.CursorConfined() ? BlockReason.Confined
                 : o.BlockFullscreen || o.BlockMaximized || o.BlockedPrograms.Length > 0 ? Environment.CheckForeground(from, o)
                 : BlockReason.None;
             var tapped = lastTap is { } t && t.Device == source.Id && t.Side == hit.Side && unchecked(timeMs - t.Time) <= EdgeDoubleTapMs;
@@ -313,7 +314,7 @@ public sealed class SwitchEngine(DeviceInfo local, ScreenLayout layout)
             : Options.DoubleTap == DoubleTapMode.Always ? BlockReason.DoubleTap
             : BlockReason.None;
         // The game lock is not a preference: no double tap gets past it.
-        var overridable = reason != BlockReason.Game && Options.DoubleTap != DoubleTapMode.Off;
+        var overridable = reason is not (BlockReason.Game or BlockReason.Confined) && Options.DoubleTap != DoubleTapMode.Off;
         if (reason == BlockReason.None || overridable && current.Tapped) return true;
         if (fresh) fx.Add(new EngineEffect.Blocked(reason, overridable));
         return false;

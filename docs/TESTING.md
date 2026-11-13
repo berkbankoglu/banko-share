@@ -1,5 +1,37 @@
 # Doğrulama kayıtları ve kabul testleri
 
+## Her oyunda oyun kilidi — 14.11.2026, v0.5.3
+
+**Bildirim:** Oyundayken imleç diğer ekrana geçiyordu. Oyun tam ekran değildi.
+
+**Kayıtlar (BANKOARTS, 0.5.2):**
+
+- 13.11 22:36 ile 14.11 01:18 arasında imleç onlarca kez DESKTOP'a geçti. Kayıtta hiç "Oyun açık" satırı yok.
+- 01:10'da WARDOGS (Steam) açıldı. 01:10 ile 01:18 arasında imleç 13 kez DESKTOP'a geçti.
+- Oyun kilidi yalnızca VALORANT'ı, League of Legends'ı ve listeye eklenen oyunları tanıyordu.
+- WARDOGS oynarken imleci kendi monitörüne kapatıyor: sınır (1,1)-(2559,1439), sanal ekran (-1920,0) 6400x1440. Kancalar fareyi bu sınırın ötesine iterken de gördüğü için Banko Share yine de geçti.
+- Menüde WARDOGS imleci serbest bırakıyor; o sırada kapatma yok.
+
+**Gerçek sistemde doğrulama (BANKOARTS, WARDOGS açıkken):**
+
+- Derlenmiş uygulamanın GameGuard ve WindowsEnvironment sınıfları küçük bir konsol programından çalıştırıldı. Kanca kurulmadı, pencere açılmadı, oyuna dokunulmadı.
+- Kayıt:
+  - "Steam'de açık: WARDOGS (2 program)"
+  - "Oyun açık: WARDOGS"
+  - oyuna geçilince "Oyun öne geldi: kilitli"
+  - "İmleç bir pencereye kapatılmış (1,1)-(2559,1439) … öndeki program: wardogsclient-win64-shipping"
+- Kilitsizken `GetClipCursor` değeri (-1920,0)-(4480,1440) oldu, sanal ekranla birebir aynı. Yani imleç kapatma kontrolü kilitsizken yanlışlıkla kilitlemez.
+
+**Otomatik testler:** 71 test. Yeniler:
+
+- İmleci penceresinde tutan program bir oyun gibi kilitler. Çift dokunma bu kilidi aşamaz. Alt+Tab kilidi açar. Oyun kilidi kapalıyken bu durum sorulmaz.
+- Steam dosyaları okunurken:
+  - kitaplık yolları ve kurulum klasörü doğru alınıyor;
+  - kaçış karakterleri çözülüyor;
+  - yorumlar atlanıyor;
+  - bir değer anahtar sanılmıyor.
+- Oyun klasöründe yalnızca oyunun kendisi sayılıyor; başlatıcılar, mağazalar, çökme raporlayıcıları ve kurulum programları sayılmıyor.
+
 ## Metin kopyala-yapıştır — 13.11.2026, v0.5.2
 
 **Bildirim:** Dosya aktarılıyordu, düz metin kopyalanıp yapıştırılamıyordu.

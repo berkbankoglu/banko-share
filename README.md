@@ -43,12 +43,14 @@ Eşleştirme kalıcıdır. Sonraki açılışlarda iki uygulama birbirini bulup 
   - Gelen içerik geldiği bilgisayara geri gönderilmez.
 - **Başka paylaşım programı:** ShareMouse, Synergy, Barrier, Input Leap, Deskflow veya Mouse Without Borders açıkken Banko Share kendini duraklatır ve nedenini yazar. İki program aynı fareyi yönetirse sürükleme ve tıklamalarda imleç donar. Diğer program kapanınca Banko Share kendiliğinden devam eder.
 - **Oyun kilidi** (**Geçiş ayarları** sayfası, varsayılan olarak açık): Oyun öndeyken imleç ve klavye o bilgisayarda kalır. Diğer bilgisayara geçmek için Alt+Tab ile oyundan çıkılır; oyuna dönünce kilit yeniden devreye girer.
-  - VALORANT ve League of Legends her zaman kilitlenir; başka oyunlar listeye eklenebilir. Yalnızca Riot istemcisinin açık olması yetmez.
+  - VALORANT ve League of Legends her zaman kilitlenir. Yalnızca Riot istemcisinin açık olması yetmez.
+  - Steam'in "çalışıyor" diye işaretlediği oyun kendiliğinden kilitlenir: Steam'in kayıt defteri değerinden ve oyunun kurulum klasöründeki program adlarından tanınır. Windows'un oyun olarak tanıdığı programlar (Game Bar listesi) da kilitlenir. Başka oyunlar listeye eklenebilir.
+  - Oyunun tam ekran ya da pencerede açık olması fark etmez. Listede olmayan bir oyun da, oynarken imleci kendi penceresinde tuttuğu (ClipCursor) sürece kenardan geçirmez. Banko Share bu sınırı yalnızca okur, hiç değiştirmez.
   - İstenirse "oyun açık olduğu sürece kilitle" seçilir; o zaman Alt+Tab da kilidi açmaz.
   - Kilitliyken fare ve klavye kancaları kaldırılır, hiçbir giriş gönderilmez ve diğer bilgisayar oraya geçemez.
   - Kenara çift dokunma ve kısayollar kilidi aşamaz.
   - Diğer bilgisayarın faresi ve klavyesi bir oyun penceresine hiç gönderilmez: oyun öne gelirse ya da arkadaki oyuna tıklanırsa imleç kendi bilgisayarına döner.
-  - Oyunun sürecine dokunulmaz; yalnızca süreç listesi ve öndeki pencerenin süreç numarası okunur.
+  - Oyunun sürecine dokunulmaz; yalnızca süreç listesi, öndeki pencerenin süreç numarası, Steam'in ve Windows'un kayıt defteri değerleri ve oyun klasöründeki dosya adları okunur.
 - **Kenardan geçişi kapatma:** **Geçiş ayarları** sayfasından veya bildirim alanı menüsünden yapılır. Kısayollar yine çalışır.
 - **Geçiş ayarları** (hepsi varsayılan olarak kapalı):
   - Ekran boyutlarını eşitleme: kenarın her yerinden orantılı geçiş.

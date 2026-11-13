@@ -567,6 +567,7 @@ public sealed class ShareController : IDisposable
             BlockReason.Corner => "Ekran köşesinde geçiş yapılmaz",
             BlockReason.Key => $"Geçmek için {key switch { SwitchKey.Shift => "Shift", SwitchKey.Ctrl => "Ctrl", _ => "sol Alt" }} tuşunu basılı tutun",
             BlockReason.Game => GameLockText[..^1],
+            BlockReason.Confined => "Öndeki program imleci penceresinde tutuyor (oyun) · Alt+Tab ile çıkınca geçebilirsiniz",
             _ => "Geçmek için kenara iki kez dokunun"
         };
         return b.DoubleTapAllowed && b.Reason != BlockReason.DoubleTap ? text + " · kenara iki kez dokunarak geçebilirsiniz." : text + ".";

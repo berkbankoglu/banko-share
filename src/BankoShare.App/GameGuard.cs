@@ -6,9 +6,10 @@ namespace BankoShare.App;
 /// <summary>
 /// Watches for programs Banko Share must step aside for, without ever touching them:
 /// <list type="bullet">
-/// <item>a locked game: VALORANT and League of Legends in a match (Riot Vanguard), plus games the user adds. The
-/// Riot Client alone (lobby, tray) does not count: nothing is protected there, and it may stay open all day.
-/// While a game runs, the foreground window is checked ten times a second, so the lock can follow Alt+Tab;</item>
+/// <item>a locked game: VALORANT and League of Legends in a match (Riot Vanguard), games the user adds, any game
+/// Steam reports running and programs Windows lists as games (see <see cref="GameLibrary"/>). The Riot Client
+/// alone (lobby, tray) does not count: nothing is protected there, and it may stay open all day. While a game
+/// runs, the foreground window is checked ten times a second, so the lock can follow Alt+Tab;</item>
 /// <item>another mouse/keyboard sharing program (ShareMouse, Synergy, Barrier, Input Leap, Deskflow, Mouse Without
 /// Borders): two of them hooking the same mouse fight over every drag and click and freeze the pointer.</item>
 /// </list>
@@ -41,7 +42,9 @@ internal sealed class GameGuard : IDisposable
     private readonly Timer snapshotTimer, focusTimer;
     private readonly object focusGate = new();
     private readonly GameFocus focus = new();
+    private readonly GameLibrary library = new();
     private readonly char[] classBuffer = new char[64];
+    private bool libraryFailed;
     private volatile IReadOnlyDictionary<int, string> names = new Dictionary<int, string>();
     /// <summary>Running locked games: process id → display name.</summary>
     private volatile IReadOnlyDictionary<int, string> gamePids = new Dictionary<int, string>();
@@ -110,8 +113,13 @@ internal sealed class GameGuard : IDisposable
                     try { map[process.Id] = SwitchOptions.NormalizeProgram(process.ProcessName); }
                     catch (InvalidOperationException) { /* Exited meanwhile. */ }
             names = map;
-            var set = games;
-            var found = enabled ? map.Where(p => set.Contains(p.Value)).ToDictionary(p => p.Key, p => DisplayName(p.Value)) : new Dictionary<int, string>();
+            var found = new Dictionary<int, string>();
+            if (enabled)
+            {
+                var (set, steam, windows) = (games, SteamGames(), WindowsGames());
+                foreach (var (pid, name) in map)
+                    if (Identify(name, set, steam, windows) is { } display) found[pid] = display;
+            }
             gamePids = found;
             var game = found.Values.Order(StringComparer.Ordinal).FirstOrDefault();
             var other = map.Values.Select(n => SharingApps.GetValueOrDefault(n)).FirstOrDefault(n => n != null);
@@ -130,6 +138,35 @@ internal sealed class GameGuard : IDisposable
         catch (Exception e) when (e is ObjectDisposedException) { return; }
         finally { Volatile.Write(ref polling, 0); }
         if (changed) Changed?.Invoke();
+    }
+
+    /// <summary>The game a program belongs to: named by the user or built in first, then Steam's, then Windows' list.</summary>
+    private static string? Identify(string name, IReadOnlySet<string> chosen, List<GameLibrary.SteamGame> steam, IReadOnlyDictionary<string, string> windows)
+    {
+        if (chosen.Contains(name)) return DisplayName(name);
+        foreach (var game in steam)
+            if (game.Programs.Contains(name)) return game.Name;
+        return windows.GetValueOrDefault(name);
+    }
+
+    // Game detection must never take the app down: a timer callback that throws ends the process.
+    private List<GameLibrary.SteamGame> SteamGames()
+    {
+        try { return library.RunningOnSteam(); }
+        catch (Exception e) { LibraryFailed("Steam", e); return []; }
+    }
+
+    private IReadOnlyDictionary<string, string> WindowsGames()
+    {
+        try { return library.RecognisedByWindows(Environment.TickCount64); }
+        catch (Exception e) { LibraryFailed("Windows oyun listesi", e); return new Dictionary<string, string>(); }
+    }
+
+    private void LibraryFailed(string source, Exception e)
+    {
+        if (libraryFailed) return;
+        libraryFailed = true;
+        Diag.Write($"{source} okunamadı: {e.GetType().Name}: {e.Message}");
     }
 
     private void CheckFocus()

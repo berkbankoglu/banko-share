@@ -119,6 +119,73 @@ internal static class SwitchOptionsTests
             var (off, ofx, _) = Setup(new SwitchOptions { PauseForProtectedGames = false }, new FakeEnvironment { GameFront = true });
             T.Equal(HookResult.Block, off.OnMouseMove(new(1000, -6), new(1000, 0), false, ofx), "Locked although the game lock is off");
         });
+        s.Test("A program holding the pointer in its window locks like a game (WARDOGS windowed), whatever its name", () =>
+        {
+            var env = new FakeEnvironment { Confined = true };
+            var (engine, fx, _) = Setup(new SwitchOptions { DoubleTap = DoubleTapMode.OverrideBlocks }, env);
+            T.Equal(HookResult.Pass, engine.OnMouseMove(new(1000, -6), new(1000, 0), false, fx, 1000), "First push");
+            T.Check(fx.SequenceEqual<E>([new E.Blocked(BlockReason.Confined, false)]), "Notice: " + string.Join(", ", fx));
+            engine.OnMouseMove(new(1000, 10), new(1000, 0), false, fx, 1100);
+            T.Equal(HookResult.Pass, engine.OnMouseMove(new(1000, -6), new(1000, 10), false, fx, 1300), "Double tap got past the confinement");
+            T.Check(engine.ActivePeer == null, "Switched out of a game holding the pointer");
+            env.Confined = false; // Alt+Tab: the game lets go of the pointer
+            engine.OnMouseMove(new(1000, 10), new(1000, 0), false, fx, 2000);
+            T.Equal(HookResult.Block, engine.OnMouseMove(new(1000, -6), new(1000, 10), false, fx, 3000), "After Alt+Tab");
+            var offEnv = new FakeEnvironment { Confined = true };
+            var (off, ofx, _) = Setup(new SwitchOptions { PauseForProtectedGames = false }, offEnv);
+            T.Equal(HookResult.Block, off.OnMouseMove(new(1000, -6), new(1000, 0), false, ofx), "Locked although the game lock is off");
+            T.Equal(0, offEnv.ConfinedChecks, "Asked about the pointer with the game lock off");
+            var gameEnv = new FakeEnvironment { GameFront = true, Confined = true };
+            var (game, gfx, _) = Setup(new SwitchOptions(), gameEnv);
+            game.OnMouseMove(new(1000, -6), new(1000, 0), false, gfx, 1000);
+            T.Check(gfx.SequenceEqual<E>([new E.Blocked(BlockReason.Game, false)]), "A known game is named as such: " + string.Join(", ", gfx));
+        });
+        s.Test("Steam manifests: library paths and install folders are read, escapes undone, pairs never misread", () =>
+        {
+            const string libraries = """
+                "libraryfolders"
+                {
+                	"0"
+                	{
+                		"path"		"C:\\Program Files (x86)\\Steam"
+                		"label"		""
+                		"apps"
+                		{
+                			"228980"		"128606066"
+                		}
+                	}
+                	"1"
+                	{
+                		"path"		"D:\\SteamLibrary"
+                		"label"		"path"
+                		"apps" { "1867240" "48905446067" }
+                	}
+                }
+                """;
+            T.Check(GameCatalog.ManifestValues(libraries, "path").SequenceEqual([@"C:\Program Files (x86)\Steam", @"D:\SteamLibrary"]),
+                "Library paths: " + string.Join(" | ", GameCatalog.ManifestValues(libraries, "path")));
+            const string manifest = """
+                "AppState"
+                {
+                	"appid"		"1867240"
+                	// a comment "name" "not this"
+                	"name"		"WARDOGS \"Early\""
+                	"installdir"		"Wardogs"
+                	"UserConfig" { "language" "turkish" }
+                }
+                """;
+            T.Equal("WARDOGS \"Early\"", GameCatalog.ManifestValues(manifest, "name").Single(), "Name");
+            T.Equal("Wardogs", GameCatalog.ManifestValues(manifest, "INSTALLDIR").Single(), "Install folder");
+            T.Equal(0, GameCatalog.ManifestValues("\"name\" {", "name").Count, "A block name is not a value");
+        });
+        s.Test("Programs beside a game: the game counts, launchers, stores and helpers do not", () =>
+        {
+            foreach (var game in new[] { "wardogsclient-win64-shipping", "wardogslauncher-shipping", "wow", "darksoulsii", "crashbandicootnsanetrilogy", "league of legends" })
+                T.Check(GameCatalog.IsGameProgram(game), "Not counted as the game: " + game);
+            foreach (var helper in new[] { "crashreportclient", "crashpad_handler", "unitycrashhandler64", "elytra-setup", "vc_redist.x64", "unins000",
+                "leagueclientux", "riotclientservices", "steam", "epicwebhelper", "ue4prereqsetup_x64", "" })
+                T.Check(!GameCatalog.IsGameProgram(helper), "Counted as the game: " + helper);
+        });
         s.Test("The game lock follows Alt+Tab: locks at once, unlocks after a moment behind, waits out the switcher", () =>
         {
             var f = new GameFocus(300);

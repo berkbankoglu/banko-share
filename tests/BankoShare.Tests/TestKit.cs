@@ -85,4 +85,8 @@ internal sealed class FakeEnvironment : ISwitchEnvironment
     public volatile bool GameBelow;
     public bool GameInFront() => GameFront;
     public bool GameUnderCursor() => GameBelow;
+    /// <summary>A program holds the pointer inside its window.</summary>
+    public volatile bool Confined;
+    public int ConfinedChecks { get; private set; }
+    public bool CursorConfined() { ConfinedChecks++; return Confined; }
 }

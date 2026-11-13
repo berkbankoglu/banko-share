@@ -272,8 +272,9 @@
       <RadioButton x:Name="GameLockFront" GroupName="GameLock" Content="Oyun öndeyken kilitle · geçmek için Alt+Tab ile oyundan çıkın" Margin="0,12,0,0" Checked="Option_Changed"/>
       <RadioButton x:Name="GameLockRunning" GroupName="GameLock" Content="Oyun açık olduğu sürece kilitle" Margin="0,8,0,0" Checked="Option_Changed"/>
       <TextBlock Style="{StaticResource Note}" Margin="0,6,0,0" Text="Oyuna dönünce kilit kendiliğinden yeniden devreye girer. Oyundan çıkınca geçiş, pano ve dosya aktarımı her zamanki gibi çalışır."/>
+      <TextBlock Style="{StaticResource Note}" Margin="0,6,0,0" Text="Tam ekran ya da pencerede oynamanız fark etmez. Listede olmayan bir oyun da, oynarken imleci kendi penceresinde tuttuğu için kenardan geçirmez."/>
       <TextBlock Text="Kilitlenen oyunlar" Style="{StaticResource Label}"/>
-      <TextBlock Style="{StaticResource Note}" Margin="0" Text="VALORANT ve League of Legends her zaman kilitlenir. Başka oyunları buraya ekleyin."/>
+      <TextBlock Style="{StaticResource Note}" Margin="0" Text="VALORANT, League of Legends, Steam'den açılan oyunlar ve Windows'un oyun olarak tanıdığı programlar kendiliğinden kilitlenir. Tanınmayan bir oyunu buraya ekleyin."/>
       <DockPanel>
        <Button x:Name="AddGameButton" DockPanel.Dock="Right" Content="Açık programlardan ekle" Style="{StaticResource Secondary}" Margin="10,6,0,10" Click="AddGame_Click"/>
        <TextBox x:Name="GamesListBox" LostKeyboardFocus="Games_LostFocus" KeyDown="Games_KeyDown" AutomationProperties.Name="Kilitlenen diğer oyunlar"/>
