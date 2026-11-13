@@ -56,6 +56,9 @@ internal static class Native
     [DllImport("user32.dll")] internal static extern nint MonitorFromWindow(nint hwnd, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] internal static extern int GetClassName(nint hwnd, char[] name, int max);
     [DllImport("user32.dll")] internal static extern uint GetWindowThreadProcessId(nint hwnd, out uint processId);
+    [DllImport("user32.dll")] internal static extern nint WindowFromPoint(Point point);
+    [DllImport("user32.dll")] internal static extern nint GetAncestor(nint hwnd, uint flags);
+    [DllImport("user32.dll")] internal static extern bool IsIconic(nint hwnd);
     [DllImport("user32.dll")] internal static extern uint MapVirtualKey(uint code, uint type);
 }
 
@@ -147,12 +150,18 @@ internal sealed class WindowsPlatform(MonitorInfo[] monitors) : IInputPlatform
 /// Foreground-window and key-state queries for the switch engine. Runs on the input thread, at most once per
 /// push against an edge, so it stays a handful of quick user32 calls.
 /// </summary>
-internal sealed class WindowsEnvironment(Func<int, string?> processName) : ISwitchEnvironment
+internal sealed class WindowsEnvironment(GameGuard games) : ISwitchEnvironment
 {
+    private const uint RootWindow = 2; // GA_ROOT
     private static readonly HashSet<string> ShellClasses = ["Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"];
     private readonly char[] buffer = new char[1024];
 
     public bool IsKeyDown(int vk) => (Native.GetAsyncKeyState(vk) & 0x8000) != 0;
+
+    public bool GameInFront() => games.IsGameWindow(Native.GetForegroundWindow());
+
+    public bool GameUnderCursor() =>
+        Native.GetCursorPos(out var p) && games.IsGameWindow(Native.GetAncestor(Native.WindowFromPoint(p), RootWindow));
 
     public BlockReason CheckForeground(RectI from, SwitchOptions options)
     {
@@ -187,7 +196,7 @@ internal sealed class WindowsEnvironment(Func<int, string?> processName) : ISwit
     private string? ProcessName(nint hwnd)
     {
         Native.GetWindowThreadProcessId(hwnd, out var pid);
-        return pid == 0 ? null : processName((int)pid);
+        return pid == 0 ? null : games.NameOf((int)pid);
     }
 }
 

@@ -265,6 +265,25 @@
     </StackPanel></Border>
 
     <Border Style="{StaticResource Card}"><StackPanel>
+     <DockPanel><TextBlock Text="Oyun kilidi" Style="{StaticResource Heading}"/><TextBlock x:Name="GameStateText" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="13" Foreground="{StaticResource Green}"/></DockPanel>
+     <TextBlock Style="{StaticResource Note}" Text="Oyundayken imleç ve klavye bu bilgisayarda kalır: imleç kenardan kaçmaz, diğer bilgisayar da buraya geçemez. Kilitliyken Banko Share fare ve klavye kancalarını kaldırır ve oyuna hiçbir giriş göndermez; Riot Vanguard gibi hile önleme sistemlerinin kurallarına uyar."/>
+     <CheckBox x:Name="GamesBox" Content="Oyun kilidini kullan (önerilir)" FontWeight="Medium" Margin="0,14,0,0" Checked="Option_Changed" Unchecked="Option_Changed"/>
+     <StackPanel x:Name="GameLockPanel" Margin="28,0,0,0">
+      <RadioButton x:Name="GameLockFront" GroupName="GameLock" Content="Oyun öndeyken kilitle · geçmek için Alt+Tab ile oyundan çıkın" Margin="0,12,0,0" Checked="Option_Changed"/>
+      <RadioButton x:Name="GameLockRunning" GroupName="GameLock" Content="Oyun açık olduğu sürece kilitle" Margin="0,8,0,0" Checked="Option_Changed"/>
+      <TextBlock Style="{StaticResource Note}" Margin="0,6,0,0" Text="Oyuna dönünce kilit kendiliğinden yeniden devreye girer. Oyundan çıkınca geçiş, pano ve dosya aktarımı her zamanki gibi çalışır."/>
+      <TextBlock Text="Kilitlenen oyunlar" Style="{StaticResource Label}"/>
+      <TextBlock Style="{StaticResource Note}" Margin="0" Text="VALORANT ve League of Legends her zaman kilitlenir. Başka oyunları buraya ekleyin."/>
+      <DockPanel>
+       <Button x:Name="AddGameButton" DockPanel.Dock="Right" Content="Açık programlardan ekle" Style="{StaticResource Secondary}" Margin="10,6,0,10" Click="AddGame_Click"/>
+       <TextBox x:Name="GamesListBox" LostKeyboardFocus="Games_LostFocus" KeyDown="Games_KeyDown" AutomationProperties.Name="Kilitlenen diğer oyunlar"/>
+      </DockPanel>
+      <TextBlock Style="{StaticResource Note}" Margin="0" Text="Program adlarını virgülle ayırın, ör. cs2.exe, FortniteClient-Win64-Shipping.exe."/>
+     </StackPanel>
+     <TextBlock Style="{StaticResource Note}" Margin="0,12,0,0" Text="Diğer bilgisayarın faresi ve klavyesi bir oyun penceresine hiçbir zaman gönderilmez: oyun orada öne gelirse ya da oyuna tıklanırsa imleç kendi bilgisayarına döner."/>
+    </StackPanel></Border>
+
+    <Border Style="{StaticResource Card}"><StackPanel>
      <TextBlock Text="Geçişi engelle" Style="{StaticResource Heading}"/>
      <TextBlock Style="{StaticResource Note}" Text="Engel varken imleç kenarda durur ve nedeni durum çubuğunda yazar. Pencere koşulları bu bilgisayardan çıkarken denetlenir; köşe, tuş ve çift dokunma her geçişte geçerlidir."/>
      <CheckBox x:Name="FullscreenBox" Content="Tam ekran bir uygulama öndeyken (oyun, sunum, video)" Margin="0,14,0,0" Checked="Option_Changed" Unchecked="Option_Changed"/>
@@ -358,12 +377,6 @@
       <Button Content="Kayıt klasörünü aç" Style="{StaticResource Secondary}" Click="OpenLogs_Click"/>
       <Button Content="Diğer bilgisayarların kaydını al" Style="{StaticResource Secondary}" Click="FetchLogs_Click"/>
      </WrapPanel>
-    </StackPanel></Border>
-    <Border Style="{StaticResource Card}"><StackPanel>
-     <TextBlock Text="Oyunlar ve hile önleme" Style="{StaticResource Heading}"/>
-     <CheckBox x:Name="GamesBox" Content="Riot oyunu açıkken bu bilgisayarda paylaşımı duraklat (önerilir)" Margin="0,12,0,0" Checked="Option_Changed" Unchecked="Option_Changed"/>
-     <TextBlock Style="{StaticResource Note}" Margin="28,4,0,0" Text="VALORANT ya da League of Legends oyunu açıkken Banko Share bu bilgisayarda fare ve klavye kancalarını kaldırır, hiçbir giriş göndermez ve diğer bilgisayara buraya geçmemesini bildirir. Oyunun sürecine hiç dokunmaz. Yalnızca Riot istemcisinin açık olması yetmez; oyun kapanınca Banko Share kendiliğinden devam eder."/>
-     <TextBlock x:Name="GameStateText" Style="{StaticResource Note}" Margin="28,6,0,0" Foreground="{StaticResource Green}"/>
     </StackPanel></Border>
     <Border Style="{StaticResource Card}"><StackPanel>
      <DockPanel><TextBlock Text="Güncellemeler" Style="{StaticResource Heading}"/><TextBlock x:Name="UpdateVersionText" HorizontalAlignment="Right" Foreground="{StaticResource Green}"/></DockPanel>

@@ -49,13 +49,13 @@ internal sealed class ShareHost : IDisposable
     }
 
     public GameGuard Games { get; }
-    /// <summary>True while the input hooks are removed for a protected game.</summary>
+    /// <summary>True while the input hooks are removed (game lock, or another sharing program).</summary>
     public bool Suspended => Input == null;
 
     /// <summary>
-    /// Game mode. Suspending brings the pointer home, sends back a peer that controls us, tells peers we take no
+    /// Game lock. Suspending brings the pointer home, sends back a peer that controls us, tells peers we take no
     /// input, waits for that to land and then removes both low-level hooks, so nothing on this machine intercepts
-    /// or injects input while the game runs. Resuming installs the hooks again. UI thread only.
+    /// or injects input while the game is in front (or runs). Resuming installs the hooks again. UI thread only.
     /// </summary>
     public void SetSuspended(bool suspended)
     {
@@ -105,7 +105,8 @@ internal sealed class ShareHost : IDisposable
             ? new PeerNetwork(identity, name + " (test)", new PeerDirectory(store), testPort, discovery: false)
             : new PeerNetwork(identity, name, new PeerDirectory(store));
         var games = new GameGuard(testInstance: testPort != 0);
-        var controller = new ShareController(new DeviceInfo(identity.Id, name, monitors), network, platform, store, version, new WindowsEnvironment(games.NameOf));
+        var controller = new ShareController(new DeviceInfo(identity.Id, name, monitors), network, platform, store, version, new WindowsEnvironment(games));
+        games.Configure(controller.Options.PauseForProtectedGames, controller.Options.ExtraGames);
         InputHost? input = null;
         try
         {

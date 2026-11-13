@@ -1,5 +1,39 @@
 # Doğrulama kayıtları ve kabul testleri
 
+## Oyun kilidi — 13.11.2026, v0.5.1
+
+**İstek:** Oyun açıkken geçiş yalnızca Alt+Tab ile oyundan çıkınca yapılabilsin; oyundayken geçiş olmasın; bunun bir kilit ayarı olsun.
+
+**Otomatik testler:** 67 test, yeni kodla üç ardışık çalıştırmada geçti. Yeni testler:
+
+- **Engel:** Oyun öndeyken her itiş engellenir ve "Oyun öndeyken geçiş kilitli" yazılır. Kenara çift dokunma kilidi aşamaz. Oyun arkaya geçince (Alt+Tab) aynı itiş geçer. Kilit kapalıyken engel yoktur.
+- **Kilit zamanlaması:**
+  - Oyun öne gelince kilit hemen devreye girer.
+  - Başka bir pencere 300 ms önde kalınca kilit açılır.
+  - Alt+Tab seçicisi açıkken durum değişmez ve bekleme yeniden başlar.
+  - Oyun kapanınca kilit hemen açılır.
+- **Kısayollar:** Oyun öndeyken "sonraki bilgisayar" ve "monitöre atla" kısayolları reddedilir ve bildirim verir. Alt+Tab'dan sonra çalışır.
+- **Kontrol edilen bilgisayar:**
+  - Arkadaki oyun penceresinin üzerinde imleç hareketi geçer; tekerlek olayı atılır.
+  - Oyun penceresine tıklama atılır; imleç geri döner, basılı Shift bırakılır ve "oyuna tıklayamaz" bildirimi çıkar.
+  - Oyun öne gelince sonraki hareket ve tuş basışı gönderilmez, imleç geri döner.
+- **Ayarlar:** Eski ayar dosyasında kilit açık ve "oyun öndeyken" modundadır. Ayarlar kaydedilip geri yüklenince aynı kalır. Geçersiz mod ve yinelenen oyun adları temizlenir.
+
+**Gerçek uygulama (BANKOARTS, test kopyası, oyun yerine zararsız bir yedek pencere):**
+
+| An | Kancalar | Öndeki pencere | Durum satırı |
+| --- | --- | --- | --- |
+| Oyun yok | kurulu | opera | Henüz eşleşmiş cihaz yok |
+| Yedek "oyun" önde | kaldırıldı | bankoshare-test-game | Oyun kilidi · test oyunu önde; … Alt+Tab ile oyundan çıkın |
+| Oyun simge durumunda | kurulu | opera | Henüz eşleşmiş cihaz yok |
+| Oyun kapandı | kurulu | opera | Henüz eşleşmiş cihaz yok |
+
+- İlk denemede kilit, oyun küçüldükten yaklaşık 1 saniye sonra açıldı. Simge durumundaki oyun penceresi artık önde sayılmıyor.
+- İkinci denemede kilit, küçültmeden 383 ms sonra açıldı (300 ms bekleme ve 100 ms kontrol aralığı).
+- Fare hiç oynatılmadı.
+
+**Henüz denenmedi:** Gerçek VALORANT veya League of Legends ile kilit, ve iki gerçek bilgisayar arasında. Yalnızca oyunun süreç adı ve öndeki pencerenin süreç numarası okunur; Vanguard'ın izlediği oyun sürecine tutamak açılmaz.
+
 ## Pano ve dosya aktarımı, donma önlemleri — 13.11.2026, v0.5.0
 
 **Bildirim:**

@@ -79,4 +79,10 @@ internal sealed class FakeEnvironment : ISwitchEnvironment
     public int ForegroundChecks { get; private set; }
     public BlockReason CheckForeground(RectI from, SwitchOptions options) { ForegroundChecks++; return Foreground; }
     public bool IsKeyDown(int vk) => Down.Contains(vk);
+    /// <summary>A locked game owns the foreground window.</summary>
+    public volatile bool GameFront;
+    /// <summary>A locked game's window is under the pointer.</summary>
+    public volatile bool GameBelow;
+    public bool GameInFront() => GameFront;
+    public bool GameUnderCursor() => GameBelow;
 }

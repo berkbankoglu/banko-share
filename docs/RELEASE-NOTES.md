@@ -1,25 +1,20 @@
-## Banko Share 0.5.0: pano ve dosya aktarımı, donma önlemleri
+## Banko Share 0.5.1: oyun kilidi
 
-Kurulu sürüm bu güncellemeyi kendiliğinden alır. Hemen almak için **Uygulama → Şimdi kontrol et** seçin. Pano paylaşımı için iki bilgisayarda da 0.5.0 olmalı.
-
-**ShareMouse'u kapatın.** Banko Share artık ShareMouse, Synergy, Barrier, Input Leap, Deskflow veya Mouse Without Borders açıkken kendini duraklatır ve nedenini yazar. İki paylaşım programı aynı fareyi yönetirse sürükleme ve tıklamalarda imleç donar.
+Kurulu sürüm bu güncellemeyi kendiliğinden alır. Hemen almak için **Uygulama → Şimdi kontrol et** seçin.
 
 ### Yeni
 
-- **Pano imleci izler:** Bir bilgisayarda kopyaladığınız şey, imleç diğer bilgisayara geçince oraya da geçer; orada Ctrl+V ile yapıştırırsınız. İmleç geri gelince orada kopyaladığınız şey de buraya gelir.
-  - Metin, biçimli metin (HTML, RTF) ve resim (ekran görüntüsü dahil) desteklenir.
-  - **Dosya ve klasörler:** Gezgin'de kopyalayın, diğer bilgisayarda Ctrl+V ile yapıştırın. Bir seferde en fazla 8 GB ve 50.000 öğe aktarılır.
-  - Dosyalar ayrı, şifreli bir bağlantıyla gider; büyük dosyalar fareyi yavaşlatmaz.
-  - Büyük aktarımlarda ilerleme durum satırında görünür; bitince bildirim çıkar.
-  - **Uygulama → Pano ve dosyalar** bölümünden kapatılabilir.
-- **Tanılama kaydı:** Bağlantılar, geçişler, duraklatmalar ve yavaş girişler kayıt dosyasına yazılır; tuşlar ve kopyalanan içerik yazılmaz. **Uygulama → Tanılama** bölümünden diğer bilgisayarın kaydı da alınabilir.
-- **Sürüm bilgisi:** Eşleşmiş cihazlar listesinde diğer bilgisayarın sürümü görünür; eski sürümse uyarılır.
+- **Oyun kilidi** (**Geçiş ayarları** sayfası, varsayılan olarak açık):
+  - Oyun öndeyken imleç ve klavye bu bilgisayarda kalır. İmleç kenardan kaçmaz, diğer bilgisayar da buraya geçemez.
+  - Diğer bilgisayara geçmek için **Alt+Tab** ile oyundan çıkın; kilit yaklaşık 0,4 saniyede açılır. Oyuna dönünce kilit hemen yeniden devreye girer.
+  - Kenara çift dokunma ve kısayollar (sonraki bilgisayar, monitöre atlama) kilidi aşamaz.
+  - İstenirse **Oyun açık olduğu sürece kilitle** seçilebilir; bu, 0.5.0'daki davranıştır.
+  - VALORANT ve League of Legends her zaman kilitlenir. Başka oyunlar **Kilitlenen oyunlar** listesine eklenebilir, ör. `cs2.exe`.
+- **Oyuna giriş gönderilmez:** Diğer bilgisayarın faresi ve klavyesi bir oyun penceresine hiç gitmez. Oyun öne gelirse ya da arkadaki oyun penceresine tıklanırsa imleç kendi bilgisayarına döner ve nedeni yazılır. Oyunun sürecine dokunulmaz.
 
-### Düzeltmeler
+### Değişenler
 
-- **Sürüklerken imleç kaçmaz:** Diğer bilgisayarda fare düğmesi basılıyken (ör. pencere sürüklerken) imleç kenardan geri geçmez; düğme bırakılınca geçer.
-- **Fare kancası bekçisi:** Windows, yanıt vermeyen bir fare kancasını sessizce kaldırabilir. Banko Share bunu fark edip kancaları yeniden kurar ve bunu kayda yazar. Takılı kalan imleç gizleme penceresi de kendiliğinden kapatılır.
-- **Oyun modu daraltıldı:** Yalnızca VALORANT ya da League of Legends oyunu açıkken devreye girer; Riot istemcisinin arka planda açık olması artık Banko Share'i durdurmaz.
-- **Hata dayanıklılığı:** Beklenmeyen bir arayüz hatası uygulamayı kapatmaz, kayda yazılır.
+- Oyun kilidi ayarı **Uygulama** sayfasından **Geçiş ayarları** sayfasına taşındı.
+- Diğer bilgisayar kilitlendiğinde imleç buraya döner ve "… kilitlendi" bildirimi çıkar.
 
 Bu bir geliştirme önizlemesidir. Windows kod imzalama sertifikası henüz yoktur.

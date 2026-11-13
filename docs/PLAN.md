@@ -64,6 +64,11 @@ Hepsi varsayılan olarak kapalıdır; açılmadıkça 0.3.0 davranışı değiş
   - Kısayolda en az iki değiştirici tuş bulunur. AltGr sayılmaz; Türkçe Q'da @, #, {, [ gibi karakterler etkilenmez.
   - Alt ile tetiklenen kısayoldan sonra pencerenin menü çubuğu açılmaz.
   - Planlanan "düzen değiştir" kısayolunun yerini "sonraki bilgisayar" aldı. Birden fazla kayıtlı düzen ileride gerekirse ayrıca ele alınacak.
+- **Oyun kilidi** (0.5.1, varsayılan olarak açık):
+  - Oyun öndeyken geçiş kilitlidir; Alt+Tab ile oyundan çıkınca açılır. İsteğe bağlı olarak oyun açık olduğu sürece kilitli kalır.
+  - Kilitliyken kancalar kaldırılır. Çift dokunma ve kısayollar kilidi aşamaz.
+  - Diğer bilgisayardan gelen giriş bir oyun penceresine hiç gönderilmez.
+  - Kilitlenen oyunlar: VALORANT, League of Legends ve kullanıcının eklediği programlar.
 
 **Kabul ölçütü:** [TESTING.md](TESTING.md) içindeki Aşama 2 tablosu iki bilgisayarda geçmeli.
 

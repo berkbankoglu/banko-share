@@ -188,6 +188,78 @@ internal static class NetworkTests
             await T.Eventually(() => !a.Snapshot().Peers.Single().Paused, "resume announced");
             T.Equal(HookResult.Block, a.OnMouseMove(new(1000, -8), new(1000, 0), false), "Switching after the game closed");
         });
+        await s.TestAsync("Game lock here: no edge or hotkey switch while a game is in front, both work after Alt+Tab", async () =>
+        {
+            var envA = new FakeEnvironment { GameFront = true };
+            using var pair = await ControllerPair.Create(environmentA: envA);
+            pair.Arrange();
+            await T.Eventually(() => pair.B.Controller.Snapshot().Layout.SameArrangement(pair.A.Controller.Snapshot().Layout), "layout synced");
+            var a = pair.A.Controller;
+            List<string> notices = [];
+            a.Notice += n => { lock (notices) notices.Add(n); };
+            a.UpdateOptions(o => o with { NextDeviceHotkey = new(KeyMods.Ctrl | KeyMods.Shift, 0x4E), JumpMods = KeyMods.Ctrl | KeyMods.Alt });
+            T.Equal(HookResult.Pass, a.OnMouseMove(new(1000, -6), new(1000, 0), false), "Crossed out of a game");
+            // Windows' key state decides the modifiers while the pointer is here.
+            envA.Down.UnionWith([0xA2, 0xA0]);
+            a.OnKey(0xA2, 29, false, true, 0); a.OnKey(0xA0, 42, false, true, 0);
+            T.Equal(HookResult.Block, a.OnKey(0x4E, 49, false, true, 0), "Ctrl+Shift+N");
+            a.OnKey(0x4E, 49, false, false, 0); a.OnKey(0xA0, 42, false, false, 0);
+            envA.Down.Remove(0xA0); envA.Down.Add(0xA4);
+            a.OnKey(0xA4, 56, false, true, 0);
+            T.Equal(HookResult.Block, a.OnKey(0x31, 2, false, true, 0), "Ctrl+Alt+1");
+            a.OnKey(0x31, 2, false, false, 0); a.OnKey(0xA4, 56, false, false, 0);
+            envA.Down.Remove(0xA4); envA.Down.Add(0xA0);
+            T.Check(a.Snapshot().ControllingName == null && pair.B.Controller.Snapshot().ControlledByName == null, "Left a game in front");
+            lock (notices) T.Check(notices.Count == 3 && notices.All(n => n == "Oyun öndeyken geçiş kilitli · Alt+Tab ile oyundan çıkınca geçebilirsiniz."),
+                "Notices: " + string.Join(" | ", notices));
+            envA.GameFront = false; // Alt+Tab
+            a.OnKey(0xA0, 42, false, true, 0);
+            T.Equal(HookResult.Block, a.OnKey(0x4E, 49, false, true, 0), "Ctrl+Shift+N after Alt+Tab");
+            await T.Eventually(() => pair.B.Controller.Snapshot().ControlledByName != null, "jumped after Alt+Tab");
+        });
+        await s.TestAsync("A peer's input never reaches a locked game: a click on it, or the game coming in front, sends the pointer back", async () =>
+        {
+            var envB = new FakeEnvironment();
+            using var pair = await ControllerPair.Create(environmentB: envB);
+            pair.Arrange();
+            await T.Eventually(() => pair.B.Controller.Snapshot().Layout.SameArrangement(pair.A.Controller.Snapshot().Layout), "layout synced");
+            var a = pair.A.Controller; var b = pair.B.Controller; var anchor = new PointI(1280, 720);
+            List<string> notices = [];
+            b.Notice += n => { lock (notices) notices.Add(n); };
+            a.OnMouseMove(new(1000, -6), new(1000, 0), false);
+            a.OnKey(0xA0, 42, false, true, 0); // Shift held
+            await T.Eventually(() => pair.B.Platform.Injected.Contains(new(EventKind.Key, 42, 1)), "session running");
+            // The game's window is behind, under the pointer: moving over it is fine, clicking it is not.
+            envB.GameBelow = true;
+            a.OnMouseMove(anchor + new PointI(5, 0), anchor, false);
+            await T.Eventually(() => pair.B.Platform.Injected.Contains(new(EventKind.Move, 685, 1074)), "moved over the game window");
+            a.OnMouseWheel(120, false);
+            a.OnMouseMove(anchor + new PointI(1, 0), anchor, false);
+            await T.Eventually(() => pair.B.Platform.Injected.Contains(new(EventKind.Move, 686, 1074)), "a wheel turn over the game sent the pointer back");
+            T.Check(b.Snapshot().ControlledByName != null && !pair.B.Platform.Injected.Any(e => e.Kind == EventKind.Wheel), "The wheel turn reached the game");
+            a.OnMouseButton(1, true);
+            await T.Eventually(() => a.Snapshot().ControllingName == null, "pointer sent back after the click");
+            T.Check(b.WaitForInput(TimeSpan.FromSeconds(2)), "Input worker stuck");
+            T.Check(!pair.B.Platform.Injected.Any(e => e.Kind == EventKind.Button), "The click reached the game");
+            T.Check(pair.B.Platform.Injected.Contains(new(EventKind.Key, 42, 0)), "Held Shift not released");
+            lock (notices) T.Check(notices.Any(n => n.Contains("oyuna tıklayamaz")), "Notices: " + string.Join(" | ", notices));
+            a.OnMouseButton(1, false); a.OnKey(0xA0, 42, false, false, 0);
+
+            // Back in; then the game comes to the front over there.
+            envB.GameBelow = false;
+            T.Check(a.WaitForInput(TimeSpan.FromSeconds(2)), "Return home still queued");
+            a.OnMouseMove(new(1000, -7), new(1000, 0), false);
+            await T.Eventually(() => b.Snapshot().ControlledByName != null, "entered again");
+            T.Check(b.WaitForInput(TimeSpan.FromSeconds(2)), "Input worker stuck");
+            var before = pair.B.Platform.Injected.Length;
+            envB.GameFront = true;
+            a.OnMouseMove(anchor + new PointI(3, 0), anchor, false);
+            a.OnKey(0x57, 17, false, true, 0);
+            await T.Eventually(() => a.Snapshot().ControllingName == null, "pointer sent back when the game came in front");
+            T.Check(b.WaitForInput(TimeSpan.FromSeconds(2)), "Input worker stuck");
+            var after = pair.B.Platform.Injected.Skip(before).ToList();
+            T.Check(!after.Any(e => e.Kind == EventKind.Move || e is { Kind: EventKind.Key or EventKind.Button, B: 1 }), "Input reached the game: " + string.Join(", ", after));
+        });
         await s.TestAsync("Losing the peer mid-session brings the pointer home", async () =>
         {
             using var pair = await ControllerPair.Create();
@@ -273,9 +345,9 @@ internal static class NetworkTests
             return new Node { Name = name, Identity = identity, Network = network, Store = store };
         }
 
-        public Node WithController(MonitorInfo[] monitors)
+        public Node WithController(MonitorInfo[] monitors, ISwitchEnvironment? environment = null)
         {
-            Controller = new ShareController(new DeviceInfo(Id, Name, monitors), Network, Platform, Store, "test");
+            Controller = new ShareController(new DeviceInfo(Id, Name, monitors), Network, Platform, Store, "test", environment);
             return this;
         }
 
@@ -293,10 +365,10 @@ internal static class NetworkTests
         public required Node A { get; init; }
         public required Node B { get; init; }
 
-        public static async Task<ControllerPair> Create()
+        public static async Task<ControllerPair> Create(ISwitchEnvironment? environmentA = null, ISwitchEnvironment? environmentB = null)
         {
-            var a = Node.Create("A").WithController(Fixtures.Bankoarts);
-            var b = Node.Create("B").WithController(Fixtures.Desktop);
+            var a = Node.Create("A").WithController(Fixtures.Bankoarts, environmentA);
+            var b = Node.Create("B").WithController(Fixtures.Desktop, environmentB);
             await a.Network.PairAsync(b.Endpoint, b.Network.OpenPairing().Code, Timeout());
             // PeerVersion is set together with the switch engine's peer entry; the device alone can come from the saved list first.
             await T.Eventually(() => a.Controller.PeerVersion(b.Id) != null && b.Controller.PeerVersion(a.Id) != null

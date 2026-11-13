@@ -40,6 +40,7 @@ public sealed class ShareController : IDisposable
     private readonly BackgroundSaver saver;
     private readonly string version;
     private readonly SwitchEngine engine;
+    private readonly ISwitchEnvironment? environment;
     /// <summary>Input applied on this machine for a peer. Touched only on <see cref="worker"/>.</summary>
     private readonly InputState injected;
     private readonly OsWorker worker;
@@ -49,12 +50,15 @@ public sealed class ShareController : IDisposable
     private int reclaimTravel;
     private DateTimeOffset lastActivity = DateTimeOffset.MinValue;
     private bool stateChanged, onInputThread, paused;
+    /// <summary>Copy of the game lock option for the worker, which does not take the lock.</summary>
+    private volatile bool gameLock;
     /// <summary>Peers that said they take no input right now (a protected game runs there).</summary>
     private readonly HashSet<string> pausedPeers = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> peerVersions = new(StringComparer.Ordinal);
     /// <summary>Machines the pointer just went to from here; raised outside the lock.</summary>
     private readonly List<string> handoffs = [];
     private long lastSlowInputLog;
+    private (string? Peer, long At) lastReclaim;
     private string? pendingNotice;
 
     public event Action? Changed;
@@ -67,13 +71,14 @@ public sealed class ShareController : IDisposable
     public ShareController(DeviceInfo local, PeerNetwork network, IInputPlatform platform, SettingsStore? store, string version,
         ISwitchEnvironment? environment = null)
     {
-        this.network = network; this.platform = platform; this.store = store; this.version = version;
+        this.network = network; this.platform = platform; this.store = store; this.version = version; this.environment = environment;
         // Settings still apply in memory when a write fails.
         saver = new BackgroundSaver(store, _ => Notice?.Invoke("Ayarlar diske kaydedilemedi; bu oturumda geçerli."));
         layout = LoadLayout();
         if (layout.PlaceMissing([local]) && layout.Revision == 0) layout.Author = local.Id;
         var options = (store?.Load(PreferencesFile, () => new SwitchOptions()) ?? new SwitchOptions()).Sanitized();
         engine = new SwitchEngine(local, layout) { Options = options, Environment = environment };
+        gameLock = options.PauseForProtectedGames;
         injected = new InputState(platform.Inject);
         worker = new OsWorker("Banko Share injector");
         network.LinkUp += OnLinkUp;
@@ -321,8 +326,12 @@ public sealed class ShareController : IDisposable
                 {
                     // A paused peer stays connected and on the layout but is no switching target until it says otherwise.
                     if (peerVersions.GetValueOrDefault(id) != hello.Version || pausedPeers.Contains(id) != hello.Paused)
-                        Diag.Write($"Merhaba: {hello.Device.Name} v{hello.Version}{(hello.Paused ? ", oyun modunda" : "")}, {hello.Device.Monitors.Length} monitör");
+                        Diag.Write($"Merhaba: {hello.Device.Name} v{hello.Version}{(hello.Paused ? ", kilitli" : "")}, {hello.Device.Monitors.Length} monitör");
                     peerVersions[id] = hello.Version;
+                    // A peer that locks sends our pointer back first (Reclaim), then says why (Hello).
+                    if (hello.Paused && !pausedPeers.Contains(id)
+                        && (engine.ActivePeer == id || lastReclaim.Peer == id && Environment.TickCount64 - lastReclaim.At < 3000))
+                        pendingNotice = $"{hello.Device.Name} kilitlendi (orada oyun önde ya da başka paylaşım programı açık); imleç bu bilgisayara döndü.";
                     if (hello.Paused) { pausedPeers.Add(id); engine.RemovePeer(id, fx); }
                     else { pausedPeers.Remove(id); engine.SetPeer(hello.Device, fx); }
                     if (layout.PlaceMissing(KnownDevices()))
@@ -357,7 +366,7 @@ public sealed class ShareController : IDisposable
                 lock (gate)
                 {
                     // Paused (a protected game runs here): send the pointer straight back, inject nothing.
-                    if (paused) { Diag.Write("Giriş reddedildi: oyun modunda"); network.Send(id, Frame.Empty(FrameType.Reclaim)); return; }
+                    if (paused) { Diag.Write("Giriş reddedildi: kilitli"); network.Send(id, Frame.Empty(FrameType.Reclaim)); return; }
                     // Whoever moved last owns the pointer: being entered ends our own remote session.
                     engine.ForceLocal(fx);
                     if (controlledBy != null && controlledBy != id) ReleaseInjected();
@@ -392,7 +401,13 @@ public sealed class ShareController : IDisposable
                 }
                 break;
             case FrameType.Reclaim:
-                lock (gate) { if (engine.ActivePeer == id) { Diag.Write($"Geri alındı: {NameOfPeer(id)} kendi faresini kullandı"); engine.ForceLocal(fx); Flush(); } }
+                lock (gate)
+                {
+                    if (engine.ActivePeer != id) break;
+                    Diag.Write($"Geri alındı: {NameOfPeer(id)} kontrolü geri aldı");
+                    lastReclaim = (id, Environment.TickCount64);
+                    engine.ForceLocal(fx); Flush();
+                }
                 break;
             // Late pairing traffic carries no meaning once the link is up.
             case FrameType.LogRequest:
@@ -411,18 +426,59 @@ public sealed class ShareController : IDisposable
 
     // ---- Helpers (caller holds the lock unless noted) ----
 
-    private void Reclaim()
+    private void Reclaim(string why = "bu bilgisayarın faresi kullanıldı")
     {
         var peer = controlledBy!;
         controlledBy = null; stateChanged = true;
-        Diag.Write($"Kontrol geri alındı: bu bilgisayarın faresi kullanıldı ({NameOfPeer(peer)} durduruldu)");
+        Diag.Write($"Kontrol geri alındı: {why} ({NameOfPeer(peer)} durduruldu)");
         ReleaseInjected();
         network.Send(peer, Frame.Empty(FrameType.Reclaim));
+    }
+
+    private const string GameLockText = "Oyun öndeyken geçiş kilitli · Alt+Tab ile oyundan çıkınca geçebilirsiniz.";
+
+    /// <summary>A locked game is in front here. Two user32 queries, no waiting.</summary>
+    private bool GameLockHolds() => gameLock && environment?.GameInFront() == true;
+
+    private enum GameGate { Inject, Drop, SendBack }
+
+    /// <summary>
+    /// Worker thread. A peer's presses, moves and wheel turns never reach a locked game: nothing while it is in
+    /// front, and no click or wheel turn on its window while it is behind. A click or the game coming in front
+    /// sends the pointer back; a stray wheel turn is just dropped. Releases of keys and buttons pressed earlier
+    /// still go through, so nothing stays held.
+    /// </summary>
+    private GameGate CheckGame(InputEvent input)
+    {
+        if (!gameLock || environment == null || input.Kind is EventKind.Heartbeat or EventKind.ReleaseAll) return GameGate.Inject;
+        if (input is { Kind: EventKind.Key or EventKind.Button, B: 0 }) return GameGate.Inject;
+        if (environment.GameInFront()) return GameGate.SendBack;
+        if (input.Kind is not (EventKind.Button or EventKind.Wheel) || !environment.GameUnderCursor()) return GameGate.Inject;
+        return input.Kind == EventKind.Button ? GameGate.SendBack : GameGate.Drop;
+    }
+
+    /// <summary>Worker thread: the peer's input would have gone into a game, so its pointer is sent back.</summary>
+    private void RefuseForGame(InputEvent input)
+    {
+        lock (gate)
+        {
+            if (controlledBy == null) return;
+            Reclaim("oyun penceresine giriş gönderilmez");
+            pendingNotice = input.Kind == EventKind.Button
+                ? "Diğer bilgisayarın faresi oyuna tıklayamaz; oyunu bu bilgisayarın kendi faresi ve klavyesiyle kullanın."
+                : "Oyun öne geldi; imleç diğer bilgisayara döndü.";
+        }
+        AfterHook();
     }
 
     /// <summary>Queues input for this machine; it is applied in order on the worker, never under the lock.</summary>
     private void TryInject(InputEvent input) => worker.Post(() =>
     {
+        switch (CheckGame(input))
+        {
+            case GameGate.Drop: return;
+            case GameGate.SendBack: RefuseForGame(input); return;
+        }
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
         try { injected.Apply(input); }
         catch (Exception) when (input.Kind == EventKind.Move) { /* e.g. secure desktop; next move retries. */ }
@@ -457,6 +513,7 @@ public sealed class ShareController : IDisposable
     {
         var wasEnabled = engine.Options.SwitchingEnabled;
         engine.Options = next;
+        gameLock = next.PauseForProtectedGames;
         if (wasEnabled && !next.SwitchingEnabled) engine.ForceLocal(fx);
         saver.Schedule(PreferencesFile, next);
     }
@@ -465,6 +522,10 @@ public sealed class ShareController : IDisposable
     {
         switch (command.Action)
         {
+            // Jumping would move the pointer out of, or inside, the game in front.
+            case HotkeyAction.NextDevice or HotkeyAction.JumpToMonitor when engine.ActivePeer == null && GameLockHolds():
+                pendingNotice = GameLockText;
+                break;
             case HotkeyAction.ToggleSwitching:
             {
                 var next = engine.Options with { SwitchingEnabled = !engine.Options.SwitchingEnabled };
@@ -484,7 +545,7 @@ public sealed class ShareController : IDisposable
                 if (command.Index >= order.Count) { pendingNotice = $"Düzende {(char)('A' + command.Index)} monitörü yok."; break; }
                 var (device, monitor) = order[command.Index];
                 if (!engine.JumpTo(device.Id, monitor.Center, fx))
-                    pendingNotice = pausedPeers.Contains(device.Id) ? $"{device.Name} oyun modunda; orada Riot oyunu açık." : $"{device.Name} bağlı değil.";
+                    pendingNotice = pausedPeers.Contains(device.Id) ? $"{device.Name} şu an kilitli; orada oyun önde ya da başka paylaşım programı açık." : $"{device.Name} bağlı değil.";
                 break;
             }
         }
@@ -500,6 +561,7 @@ public sealed class ShareController : IDisposable
             BlockReason.Program => "Bu program öndeyken geçiş yapılmaz",
             BlockReason.Corner => "Ekran köşesinde geçiş yapılmaz",
             BlockReason.Key => $"Geçmek için {key switch { SwitchKey.Shift => "Shift", SwitchKey.Ctrl => "Ctrl", _ => "sol Alt" }} tuşunu basılı tutun",
+            BlockReason.Game => GameLockText[..^1],
             _ => "Geçmek için kenara iki kez dokunun"
         };
         return b.DoubleTapAllowed && b.Reason != BlockReason.DoubleTap ? text + " · kenara iki kez dokunarak geçebilirsiniz." : text + ".";

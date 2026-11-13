@@ -104,6 +104,34 @@ internal static class SwitchOptionsTests
             engine.OnMouseMove(Anchor + new PointI(0, 20), Anchor, false, fx, 2200);
             T.Check(engine.ActivePeer == null && fx.Contains(new E.WarpLocal(new(1000, 9))), "Double tap home: " + string.Join(", ", fx));
         });
+        s.Test("The game lock blocks every push while a game is in front; no double tap gets past it, Alt+Tab does", () =>
+        {
+            var env = new FakeEnvironment { GameFront = true };
+            var (engine, fx, _) = Setup(new SwitchOptions { DoubleTap = DoubleTapMode.OverrideBlocks }, env);
+            T.Equal(HookResult.Pass, engine.OnMouseMove(new(1000, -6), new(1000, 0), false, fx, 1000), "First push");
+            T.Check(fx.SequenceEqual<E>([new E.Blocked(BlockReason.Game, false)]), "Notice: " + string.Join(", ", fx));
+            engine.OnMouseMove(new(1000, 10), new(1000, 0), false, fx, 1100);
+            T.Equal(HookResult.Pass, engine.OnMouseMove(new(1000, -6), new(1000, 10), false, fx, 1300), "Double tap got past the game lock");
+            T.Check(engine.ActivePeer == null && env.ForegroundChecks == 0, "Switched, or asked about windows the lock already settled");
+            env.GameFront = false; // Alt+Tab out of the game
+            engine.OnMouseMove(new(1000, 10), new(1000, 0), false, fx, 2000);
+            T.Equal(HookResult.Block, engine.OnMouseMove(new(1000, -6), new(1000, 10), false, fx, 3000), "After Alt+Tab");
+            var (off, ofx, _) = Setup(new SwitchOptions { PauseForProtectedGames = false }, new FakeEnvironment { GameFront = true });
+            T.Equal(HookResult.Block, off.OnMouseMove(new(1000, -6), new(1000, 0), false, ofx), "Locked although the game lock is off");
+        });
+        s.Test("The game lock follows Alt+Tab: locks at once, unlocks after a moment behind, waits out the switcher", () =>
+        {
+            var f = new GameFocus(300);
+            T.Check(f.Update(true, 0) && f.InFront, "Lock at once");
+            T.Check(!f.Update(null, 50) && f.InFront, "Switcher open");
+            T.Check(!f.Update(false, 100) && f.InFront, "Unlocked at once");
+            T.Check(!f.Update(null, 200) && f.InFront, "Switcher again");
+            T.Check(!f.Update(false, 300) && !f.Update(false, 550) && f.InFront, "The switcher did not restart the wait");
+            T.Check(f.Update(false, 600) && !f.InFront, "Still locked 300 ms behind");
+            T.Check(f.Update(true, 700) && f.InFront, "Back into the game");
+            T.Check(!f.Update(false, 750) && !f.Update(true, 800) && !f.Update(false, 1000) && !f.Update(false, 1200) && f.InFront, "A flicker restarts the wait");
+            T.Check(f.Reset() && !f.InFront && !f.Reset(), "Game exited");
+        });
         s.Test("Hotkeys fire once, swallow their key, mask a local Alt and ignore AltGr", () =>
         {
             var options = new SwitchOptions { JumpMods = KeyMods.Ctrl | KeyMods.Alt, ToggleHotkey = new(KeyMods.Ctrl | KeyMods.Shift, 0x53) };
@@ -165,10 +193,12 @@ internal static class SwitchOptionsTests
                 var old = store.Load(ShareController.PreferencesFile, () => new SwitchOptions()).Sanitized();
                 T.Check(!old.SwitchingEnabled && !old.EqualizeEdges && !old.Wrap && old.DoubleTap == DoubleTapMode.Off && old.BlockedPrograms.Length == 0
                     && old.JumpMods == KeyMods.None && old.ToggleHotkey == null, "0.3 file");
+                T.Check(old.PauseForProtectedGames && old.GameLock == GameLockMode.InFront && old.ExtraGames.Length == 0, "Game lock defaults");
                 var full = new SwitchOptions
                 {
                     EqualizeEdges = true, Wrap = true, BlockCorners = true, RequiredKey = SwitchKey.Shift, DoubleTap = DoubleTapMode.Always,
-                    BlockedPrograms = ["game"], ToggleHotkey = new(KeyMods.Ctrl | KeyMods.Alt, 0x53), JumpMods = KeyMods.Ctrl | KeyMods.Shift
+                    BlockedPrograms = ["game"], ToggleHotkey = new(KeyMods.Ctrl | KeyMods.Alt, 0x53), JumpMods = KeyMods.Ctrl | KeyMods.Shift,
+                    GameLock = GameLockMode.WhileRunning, ExtraGames = ["cs2"]
                 };
                 store.Save(ShareController.PreferencesFile, full);
                 var loaded = store.Load(ShareController.PreferencesFile, () => new SwitchOptions()).Sanitized();
@@ -179,9 +209,11 @@ internal static class SwitchOptionsTests
             {
                 BlockedPrograms = [@"C:\Games\Game.EXE", " game ", "OBS64.exe", "\"steam.exe\"", "", null!],
                 ToggleHotkey = new(KeyMods.Ctrl, 0x53), HomeHotkey = new(KeyMods.Ctrl | KeyMods.Alt, LCtrl), NextDeviceHotkey = new((KeyMods)64 | KeyMods.Ctrl, 0x41),
-                JumpMods = KeyMods.Shift, RequiredKey = (SwitchKey)42, DoubleTap = (DoubleTapMode)9
+                JumpMods = KeyMods.Shift, RequiredKey = (SwitchKey)42, DoubleTap = (DoubleTapMode)9,
+                GameLock = (GameLockMode)7, ExtraGames = [@"D:\Games\CS2.EXE", "cs2", " "]
             }.Sanitized();
             T.Check(messy.BlockedPrograms.SequenceEqual(["game", "obs64", "steam"]), "Programs: " + string.Join(", ", messy.BlockedPrograms));
+            T.Check(messy.GameLock == GameLockMode.InFront && messy.ExtraGames.SequenceEqual(["cs2"]), "Games: " + string.Join(", ", messy.ExtraGames));
             T.Check(messy.ToggleHotkey == null && messy.HomeHotkey == null && messy.NextDeviceHotkey == null && messy.JumpMods == KeyMods.None
                 && messy.RequiredKey == SwitchKey.None && messy.DoubleTap == DoubleTapMode.Off, "Invalid values kept");
         });

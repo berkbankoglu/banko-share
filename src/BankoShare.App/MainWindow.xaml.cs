@@ -202,28 +202,35 @@ public partial class MainWindow : Window
     private void Exit_Click(object sender, RoutedEventArgs e) => ExitApplication();
 
     /// <summary>
-    /// Steps aside while a Riot Vanguard–protected game runs here or another sharing program (ShareMouse…) is open:
-    /// two programs hooking the same mouse fight over every drag and freeze the pointer. Comes back on its own.
+    /// Steps aside while a locked game is in front (or runs, if so chosen) or another sharing program (ShareMouse…)
+    /// is open: two programs hooking the same mouse fight over every drag and freeze the pointer. Comes back on its own.
     /// </summary>
     private void ApplyGameMode()
     {
         if (host == null || disposed) return;
-        var game = host.Games.Active;
+        var o = host.Controller.Options;
+        host.Games.Configure(o.PauseForProtectedGames, o.ExtraGames);
+        var game = host.Games.RunningGame;
+        var whileRunning = o.GameLock == GameLockMode.WhileRunning;
+        var locked = game != null && (whileRunning || host.Games.InFront);
         var other = host.Games.OtherSharingApp;
-        GameStateText.Text = game ? "Şu an bir Riot oyunu açık." : "";
+        GameStateText.Text = game == null ? "" : locked ? $"{game} · kilitli" : $"{game} arkada · geçiş açık";
+        GameStateText.Foreground = locked ? Warning : Sharing;
         (pauseReason, pauseTrayText) = other != null
             ? ($"{other} açık · iki paylaşım programı aynı fareyi yönetirse imleç donar; Banko Share duraklatıldı, {other}'ı kapatın", $"Banko Share · {other} açık, duraklatıldı")
-            : game && host.Controller.Options.PauseForProtectedGames
-                ? ("Oyun modu · Riot oyunu açık; bu bilgisayarda fare ve klavye paylaşımı duraklatıldı", "Banko Share · oyun modu (Riot oyunu açık)")
-                : (null, null);
+            : locked && whileRunning ? ($"Oyun kilidi · {game} açık; kapanana kadar imleç ve klavye bu bilgisayarda kalır", $"Banko Share · oyun kilidi ({game} açık)")
+            : locked ? ($"Oyun kilidi · {game} önde; diğer bilgisayara geçmek için Alt+Tab ile oyundan çıkın", $"Banko Share · oyun kilidi ({game} önde)")
+            : (null, null);
         var pause = pauseReason != null;
-        if (other != null && other != announcedOtherApp && !game)
+        if (other != null && other != announcedOtherApp && !locked)
             tray.ShowNotice($"{other} açık", $"Banko Share, {other} ile aynı anda çalışamaz ve duraklatıldı. Banko Share'i kullanmak için {other}'ı kapatın; Banko Share kendiliğinden devam eder.");
         announcedOtherApp = other;
         if (pause == host.Suspended) return;
         try { host.SetSuspended(pause); }
         catch (Exception e) when (e is Win32Exception or InvalidOperationException) { ShowNotice("Fare kancası yeniden kurulamadı: " + e.Message); return; }
-        ShowNotice(pause ? (other != null ? $"{other} açık: Banko Share duraklatıldı." : "Riot oyunu açık: Banko Share bu bilgisayarda duraklatıldı.") : "Banko Share yeniden etkin.");
+        // Alt+Tab in and out of a game is routine: the status line says enough. The rest is worth a notice.
+        if (other != null) ShowNotice($"{other} açık: Banko Share duraklatıldı.");
+        else if (pause && whileRunning) ShowNotice($"{game} açık: oyun kilidi devrede.");
         Refresh();
     }
 
@@ -337,7 +344,7 @@ public partial class MainWindow : Window
             row.Children.Add(new Ellipse { Width = 9, Height = 9, Fill = p.Connected ? Connected : Idle, Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center });
             var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             text.Children.Add(new TextBlock { Text = p.Name, FontWeight = FontWeights.SemiBold });
-            text.Children.Add(new TextBlock { Text = (p.Connected ? p.Paused ? "Bağlı · şu an duraklatıldı (oyun veya başka paylaşım programı)" : "Bağlı" : "Bağlı değil") + (p.Version != null ? " · v" + p.Version.Split('+')[0] : "") + (p.Version != null && !Versions.AtLeast(p.Version, 0, 5) ? " · eski sürüm, güncellenmeli" : "") + (p.Address != null ? " · " + p.Address : ""), Foreground = Muted, FontSize = 12 });
+            text.Children.Add(new TextBlock { Text = (p.Connected ? p.Paused ? "Bağlı · şu an kilitli (oyun önde ya da başka paylaşım programı açık)" : "Bağlı" : "Bağlı değil") + (p.Version != null ? " · v" + p.Version.Split('+')[0] : "") + (p.Version != null && !Versions.AtLeast(p.Version, 0, 5) ? " · eski sürüm, güncellenmeli" : "") + (p.Address != null ? " · " + p.Address : ""), Foreground = Muted, FontSize = 12 });
             row.Children.Add(text);
             PeersPanel.Children.Add(row);
         }
@@ -472,6 +479,9 @@ public partial class MainWindow : Window
         MaximizedBox.IsChecked = o.BlockMaximized;
         CornersBox.IsChecked = o.BlockCorners;
         GamesBox.IsChecked = o.PauseForProtectedGames;
+        GameLockPanel.IsEnabled = o.PauseForProtectedGames;
+        (o.GameLock == GameLockMode.WhileRunning ? GameLockRunning : GameLockFront).IsChecked = true;
+        if (!GamesListBox.IsKeyboardFocusWithin) GamesListBox.Text = ProgramList(o.ExtraGames);
         ClipboardBox.IsChecked = o.ShareClipboard;
         FilesBox.IsChecked = o.ShareFiles;
         FilesBox.IsEnabled = o.ShareClipboard;
@@ -498,6 +508,8 @@ public partial class MainWindow : Window
             : sender == MaximizedBox ? o with { BlockMaximized = On(MaximizedBox) }
             : sender == CornersBox ? o with { BlockCorners = On(CornersBox) }
             : sender == GamesBox ? o with { PauseForProtectedGames = On(GamesBox) }
+            : sender == GameLockFront ? o with { GameLock = GameLockMode.InFront }
+            : sender == GameLockRunning ? o with { GameLock = GameLockMode.WhileRunning }
             : sender == ClipboardBox ? o with { ShareClipboard = On(ClipboardBox) }
             : sender == FilesBox ? o with { ShareFiles = On(FilesBox) }
             : sender == KeyNone ? o with { RequiredKey = SwitchKey.None }
@@ -512,17 +524,22 @@ public partial class MainWindow : Window
             : sender == JumpCtrlShift ? o with { JumpMods = KeyMods.Ctrl | KeyMods.Shift }
             : o);
         if (sender == JumpCtrlAlt || sender == JumpCtrlShift) CheckHotkeyConflicts();
-        if (sender == GamesBox) ApplyGameMode();
+        if (sender == GamesBox || sender == GameLockFront || sender == GameLockRunning) ApplyGameMode();
     }
+
+    private static string ProgramList(IEnumerable<string> names) => string.Join(", ", names.Select(p => p + ".exe"));
+
+    private static string[] ParsePrograms(string text) =>
+        SwitchOptions.NormalizePrograms(text.Split([',', ';', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries));
 
     private void ApplyPrograms()
     {
         if (host == null) return;
-        var list = SwitchOptions.NormalizePrograms(ProgramsBox.Text.Split([',', ';', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries));
+        var list = ParsePrograms(ProgramsBox.Text);
         var applied = list.SequenceEqual(host.Controller.Options.BlockedPrograms)
             ? host.Controller.Options
             : host.Controller.UpdateOptions(o => o with { BlockedPrograms = list });
-        ProgramsBox.Text = string.Join(", ", applied.BlockedPrograms.Select(p => p + ".exe"));
+        ProgramsBox.Text = ProgramList(applied.BlockedPrograms);
     }
 
     private void Programs_LostFocus(object sender, KeyboardFocusChangedEventArgs e) => ApplyPrograms();
@@ -534,19 +551,50 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
-    private void AddProgram_Click(object sender, RoutedEventArgs e)
+    private void AddProgram_Click(object sender, RoutedEventArgs e) =>
+        ShowProgramMenu(AddProgramButton, host?.Controller.Options.BlockedPrograms ?? [], name =>
+        {
+            var applied = host?.Controller.UpdateOptions(o => o with { BlockedPrograms = [.. o.BlockedPrograms, name] });
+            if (applied != null) ProgramsBox.Text = ProgramList(applied.BlockedPrograms);
+        });
+
+    private void ApplyGames()
     {
-        var menu = new ContextMenu { PlacementTarget = AddProgramButton, Placement = PlacementMode.Bottom };
-        var blocked = host?.Controller.Options.BlockedPrograms ?? [];
+        if (host == null) return;
+        var list = ParsePrograms(GamesListBox.Text);
+        var applied = list.SequenceEqual(host.Controller.Options.ExtraGames)
+            ? host.Controller.Options
+            : host.Controller.UpdateOptions(o => o with { ExtraGames = list });
+        GamesListBox.Text = ProgramList(applied.ExtraGames);
+        ApplyGameMode();
+    }
+
+    private void Games_LostFocus(object sender, KeyboardFocusChangedEventArgs e) => ApplyGames();
+
+    private void Games_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        ApplyGames();
+        e.Handled = true;
+    }
+
+    private void AddGame_Click(object sender, RoutedEventArgs e) =>
+        ShowProgramMenu(AddGameButton, host?.Controller.Options.ExtraGames ?? [], name =>
+        {
+            var applied = host?.Controller.UpdateOptions(o => o with { ExtraGames = [.. o.ExtraGames, name] });
+            if (applied == null) return;
+            GamesListBox.Text = ProgramList(applied.ExtraGames);
+            ApplyGameMode();
+        });
+
+    private static void ShowProgramMenu(Button anchor, string[] already, Action<string> add)
+    {
+        var menu = new ContextMenu { PlacementTarget = anchor, Placement = PlacementMode.Bottom };
         foreach (var (name, title) in RunningPrograms())
         {
             // A TextBlock header keeps underscores in names from turning into access keys.
-            var item = new MenuItem { Header = new TextBlock { Text = $"{name}.exe  ·  {title}", MaxWidth = 460, TextTrimming = TextTrimming.CharacterEllipsis }, IsEnabled = !blocked.Contains(name) };
-            item.Click += (_, _) =>
-            {
-                var applied = host?.Controller.UpdateOptions(o => o with { BlockedPrograms = [.. o.BlockedPrograms, name] });
-                if (applied != null) ProgramsBox.Text = string.Join(", ", applied.BlockedPrograms.Select(p => p + ".exe"));
-            };
+            var item = new MenuItem { Header = new TextBlock { Text = $"{name}.exe  ·  {title}", MaxWidth = 460, TextTrimming = TextTrimming.CharacterEllipsis }, IsEnabled = !already.Contains(name) };
+            item.Click += (_, _) => add(name);
             menu.Items.Add(item);
         }
         if (menu.Items.Count == 0) menu.Items.Add(new MenuItem { Header = "Pencereli program bulunamadı", IsEnabled = false });

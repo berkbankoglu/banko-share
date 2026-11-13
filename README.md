@@ -38,11 +38,13 @@ Eşleştirme kalıcıdır. Sonraki açılışlarda iki uygulama birbirini bulup 
   - Gelen dosyalar yapıştırılana kadar `%LocalAppData%\BankoShare.Settings\Alınan dosyalar` içinde bekler; üç günden eskiler silinir.
   - Uygulama açılmadan önce kopyalanmış içerik paylaşılmaz; gelen içerik geldiği bilgisayara geri gönderilmez.
 - **Başka paylaşım programı:** ShareMouse, Synergy, Barrier, Input Leap, Deskflow veya Mouse Without Borders açıkken Banko Share kendini duraklatır ve nedenini yazar. İki program aynı fareyi yönetirse sürükleme ve tıklamalarda imleç donar. Diğer program kapanınca Banko Share kendiliğinden devam eder.
-- **Oyun modu:** Riot Vanguard korumalı bir oyun (VALORANT, League of Legends) açıkken Banko Share o bilgisayarda kenara çekilir; yalnızca Riot istemcisinin açık olması yetmez. Oyun kapanınca kendiliğinden devam eder. Bu sürede:
-  - fare ve klavye kancaları kaldırılır,
-  - hiçbir giriş gönderilmez,
-  - diğer bilgisayar oraya geçemez,
-  - oyunun sürecine dokunulmaz.
+- **Oyun kilidi** (**Geçiş ayarları** sayfası, varsayılan olarak açık): Oyun öndeyken imleç ve klavye o bilgisayarda kalır. Diğer bilgisayara geçmek için Alt+Tab ile oyundan çıkılır; oyuna dönünce kilit yeniden devreye girer.
+  - VALORANT ve League of Legends her zaman kilitlenir; başka oyunlar listeye eklenebilir. Yalnızca Riot istemcisinin açık olması yetmez.
+  - İstenirse "oyun açık olduğu sürece kilitle" seçilir; o zaman Alt+Tab da kilidi açmaz.
+  - Kilitliyken fare ve klavye kancaları kaldırılır, hiçbir giriş gönderilmez ve diğer bilgisayar oraya geçemez.
+  - Kenara çift dokunma ve kısayollar kilidi aşamaz.
+  - Diğer bilgisayarın faresi ve klavyesi bir oyun penceresine hiç gönderilmez: oyun öne gelirse ya da arkadaki oyuna tıklanırsa imleç kendi bilgisayarına döner.
+  - Oyunun sürecine dokunulmaz; yalnızca süreç listesi ve öndeki pencerenin süreç numarası okunur.
 - **Kenardan geçişi kapatma:** **Geçiş ayarları** sayfasından veya bildirim alanı menüsünden yapılır. Kısayollar yine çalışır.
 - **Geçiş ayarları** (hepsi varsayılan olarak kapalı):
   - Ekran boyutlarını eşitleme: kenarın her yerinden orantılı geçiş.

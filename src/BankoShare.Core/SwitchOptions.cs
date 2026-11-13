@@ -10,8 +10,17 @@ public enum SwitchKey { None, Shift, Ctrl, Alt }
 
 public enum DoubleTapMode { Off, OverrideBlocks, Always }
 
-/// <summary>Why a push against an edge did not switch.</summary>
-public enum BlockReason { None, Fullscreen, Maximized, Program, Corner, Key, DoubleTap }
+/// <summary>Why a push against an edge did not switch. Game is the game lock and can never be overridden.</summary>
+public enum BlockReason { None, Fullscreen, Maximized, Program, Corner, Key, DoubleTap, Game }
+
+/// <summary>When the game lock holds sharing on this machine.</summary>
+public enum GameLockMode
+{
+    /// <summary>Only while the game's window is in front: Alt+Tab out of the game and switching works again.</summary>
+    InFront,
+    /// <summary>For as long as the game runs, in front or not.</summary>
+    WhileRunning
+}
 
 public enum HotkeyAction { ToggleSwitching, NextDevice, ReturnHome, JumpToMonitor }
 
@@ -76,10 +85,14 @@ public sealed record SwitchOptions
     /// <summary>Modifiers that, with a digit 1–9, jump to monitor A–I. None turns it off.</summary>
     public KeyMods JumpMods { get; init; }
     /// <summary>
-    /// While a Riot Vanguard–protected game runs on this machine, remove the input hooks, inject nothing and tell
-    /// peers not to switch here. On by default; input tools must stay out of anti-cheat-protected games.
+    /// The game lock. While it holds (see <see cref="GameLock"/>), this machine removes its input hooks, injects
+    /// nothing and tells peers not to switch here; a peer's input is never sent into a game window. On by default:
+    /// input tools must stay out of anti-cheat-protected games. Name kept for 0.4 settings files.
     /// </summary>
     public bool PauseForProtectedGames { get; init; } = true;
+    public GameLockMode GameLock { get; init; }
+    /// <summary>Games locked besides VALORANT and League of Legends: lower-case executable names without extension.</summary>
+    public string[] ExtraGames { get; init; } = [];
     /// <summary>Text and images copied here follow the pointer to the other machine, and are accepted from it.</summary>
     public bool ShareClipboard { get; init; } = true;
     /// <summary>Copied files and folders follow the pointer too (sent over a separate connection).</summary>
@@ -91,6 +104,8 @@ public sealed record SwitchOptions
         RequiredKey = Enum.IsDefined(RequiredKey) ? RequiredKey : SwitchKey.None,
         DoubleTap = Enum.IsDefined(DoubleTap) ? DoubleTap : DoubleTapMode.Off,
         BlockedPrograms = NormalizePrograms(BlockedPrograms),
+        GameLock = Enum.IsDefined(GameLock) ? GameLock : GameLockMode.InFront,
+        ExtraGames = NormalizePrograms(ExtraGames),
         ToggleHotkey = ToggleHotkey?.IsValid == true ? ToggleHotkey : null,
         NextDeviceHotkey = NextDeviceHotkey?.IsValid == true ? NextDeviceHotkey : null,
         HomeHotkey = HomeHotkey?.IsValid == true ? HomeHotkey : null,
@@ -121,4 +136,35 @@ public interface ISwitchEnvironment
     BlockReason CheckForeground(RectI from, SwitchOptions options);
     /// <summary>Physical key state as Windows sees it (keys blocked by our hook are not included).</summary>
     bool IsKeyDown(int vk);
+    /// <summary>A locked game owns the foreground window: never leave this machine, never inject into it.</summary>
+    bool GameInFront();
+    /// <summary>A locked game owns the window under the pointer: a click or wheel there would reach the game.</summary>
+    bool GameUnderCursor();
+}
+
+/// <summary>
+/// Whether a locked game is in front, steadied for the hooks: it locks at once, unlocks only once another window
+/// has stayed in front for <paramref name="unlockDelayMs"/>, and keeps its state while the Alt+Tab switcher is open.
+/// </summary>
+public sealed class GameFocus(long unlockDelayMs = 300)
+{
+    private long since = -1;
+    public bool InFront { get; private set; }
+
+    /// <param name="gameInFront">Null while the user is choosing a window (task switcher, no foreground window).</param>
+    /// <returns>True when <see cref="InFront"/> changed.</returns>
+    public bool Update(bool? gameInFront, long nowMs)
+    {
+        if (gameInFront != false) since = -1;
+        if (gameInFront == null) return false;
+        if (gameInFront.Value) { if (InFront) return false; return InFront = true; }
+        if (!InFront) return false;
+        if (since < 0) since = nowMs;
+        if (nowMs - since < unlockDelayMs) return false;
+        InFront = false; since = -1;
+        return true;
+    }
+
+    /// <summary>The game exited: nothing left to wait for.</summary>
+    public bool Reset() { since = -1; if (!InFront) return false; InFront = false; return true; }
 }
