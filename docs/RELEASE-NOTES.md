@@ -1,12 +1,13 @@
-## Banko Share 0.5.3: oyun kilidi her oyunda
+## Banko Share 0.5.4: yeni logo
 
 Kurulu sürüm bu güncellemeyi kendiliğinden alır. Hemen almak için **Uygulama → Şimdi kontrol et** seçin.
 
-### Düzeltmeler
+### Değişiklikler
 
-- **Steam oyunları kendiliğinden kilitlenir:** Oyun kilidi önceden yalnızca VALORANT ve League of Legends'ı tanıyordu; Steam'den açılan bir oyunda imleç ekran kenarından diğer bilgisayara geçebiliyordu. Artık Steam'in "çalışıyor" diye işaretlediği oyun öndeyken geçiş kilitli. Durum satırında oyunun adı görünür, ör. "WARDOGS · kilitli".
-- **Windows'un tanıdığı oyunlar:** Windows'un oyun olarak kaydettiği programlar (ör. World of Warcraft) da kilitlenir. Oyun başlatıcıları ve mağazalar (Riot istemcisi, Steam, Battle.net…) kilitlenmez.
-- **Pencerede oynarken de geçmez:** Tam ekran ya da pencerede oynamanız fark etmez. Listede olmayan bir oyun da, oynarken imleci kendi penceresinde tuttuğu sürece kenardan geçirmez.
-- **Hile önleme kurallarına uygun:** Oyunun sürecine dokunulmaz. Yalnızca Steam'in ve Windows'un kayıt defteri değerleri, oyun klasöründeki dosya adları ve imlecin sınırı okunur; hiçbiri değiştirilmez.
+- **Yeni logo:** Koyu karonun üzerindeki küçük imlecin yerini simgenin tamamını kaplayan büyük, turuncu bir imleç aldı. Görev çubuğunda, bildirim alanında ve pencerede daha büyük ve daha kolay seçilir görünür; koyu ve açık görev çubuğunda aynı şekilde okunur.
+- **Bildirim alanındaki durum:** Bir bilgisayar bağlıyken imlecin sağ üstünde yeşil bir nokta, imleç paylaşılırken halkalı bir nokta görünür.
+- Windows eski simgeyi bir süre önbellekte tutabilir. Görev çubuğuna sabitlenmiş simge hemen değişmezse sabitlemeyi kaldırıp yeniden sabitleyin ya da bilgisayarı yeniden başlatın.
+
+0.5.3'ten beri oyun kilidi Steam oyunlarını ve imleci penceresinde tutan oyunları da tanır.
 
 Bu bir geliştirme önizlemesidir. Windows kod imzalama sertifikası henüz yoktur.
