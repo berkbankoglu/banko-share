@@ -6,3 +6,13 @@ work/
 *.user
 *.pfx
 *.key
+
+# --- Gizli anahtarlar ve kisisel yerel dosyalar: asla repoya girmesin ---
+.env
+.env.*
+!.env.example
+**/.claude/settings.local.json
+*.pem
+*.key
+*.pfx
+*.p12
