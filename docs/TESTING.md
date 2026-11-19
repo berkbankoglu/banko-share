@@ -12,7 +12,7 @@ Otomatik (76 test, hepsi geçti; 5'i yeni):
 Elle (BANKOARTS, yöneticisiz):
 
 - Derlenmiş uygulama üzerinde sonda: hizmet kurulu değilken durum `Installed = False`, yardımcı sinyali yok, giriş masaüstü `Default`, uygulama dışı komut satırı modları `--tray` gibi normal argümanları yakalamıyor.
-- `WTSQuerySessionInformationW` bellek düzeni canlı doğrulandı: oturum 1 için kullanıcı `brkbn`, istasyon `Console`, kilit bayrağı 1 (açık). ANSI sürümü yanlış ofset veriyordu; uygulama Unicode sürümü çağırıyor.
+- `WTSQuerySessionInformationW` bellek düzeni canlı doğrulandı: oturum 1 için kullanıcı adı ve istasyon `Console` doğru okundu, kilit bayrağı 1 (açık). ANSI sürümü yanlış ofset veriyordu; uygulama Unicode sürümü çağırıyor.
 - Yayın çıktısında `System.ServiceProcess.ServiceController.dll` Windows uygulamasıdır (91 400 bayt; yer tutucu 35 096 bayt).
 
 Bekleyen (yönetici onayı ve iki bilgisayar gerekir): hizmetin kurulumu, yardımcının SYSTEM olarak oturum 1'de başlaması, Win+L ile kilit ekranında diğer bilgisayardan şifre girilmesi, yeniden başlatma sonrası şifre ekranı, seçeneği kapatınca hizmetin ve dosyaların kaldırılması.
