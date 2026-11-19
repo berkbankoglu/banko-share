@@ -19,12 +19,13 @@ public static class Diag
 
     public static string? FilePath { get { lock (Gate) return file; } }
 
-    public static void Start(string directory)
+    /// <summary>The logon-screen service and helper are separate processes and keep their own files.</summary>
+    public static void Start(string directory, string fileName = "banko-share.log")
     {
         try
         {
             Directory.CreateDirectory(directory);
-            var path = Path.Combine(directory, "banko-share.log");
+            var path = Path.Combine(directory, fileName);
             if (File.Exists(path) && new FileInfo(path).Length > RotateBytes) File.Move(path, path + ".old", true);
             lock (Gate) file = path;
         }
@@ -44,6 +45,17 @@ public static class Diag
             writing = true;
         }
         _ = Task.Run(Flush);
+    }
+
+    /// <summary>Waits until queued lines are on disk, e.g. before a short-lived process exits.</summary>
+    public static void WaitIdle(TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            lock (Gate) if (!writing) return;
+            Thread.Sleep(10);
+        }
     }
 
     /// <summary>The most recent lines, at most <paramref name="maxBytes"/> of UTF-8.</summary>

@@ -27,7 +27,8 @@ public sealed class PeerNetwork : IDisposable
     private readonly DeviceIdentity self;
     private readonly string name;
     private readonly int requestedPort;
-    private readonly bool discovery;
+    private readonly bool discovery, listen;
+    private volatile bool standby;
     private readonly CancellationTokenSource life = new();
     private readonly object gate = new();
     private readonly Dictionary<string, PeerLink> links = new(StringComparer.Ordinal);
@@ -48,19 +49,46 @@ public sealed class PeerNetwork : IDisposable
     /// <summary>Links, discovery results or the pairing offer changed.</summary>
     public event Action? Changed;
 
-    public PeerNetwork(DeviceIdentity self, string name, PeerDirectory directory, int port = DefaultPort, bool discovery = true)
+    /// <summary>
+    /// Without <paramref name="listen"/> nothing is accepted and only outbound links are made (the logon-screen
+    /// helper); <see cref="Port"/> is then <paramref name="port"/>, the app's port that peers should keep using.
+    /// </summary>
+    public PeerNetwork(DeviceIdentity self, string name, PeerDirectory directory, int port = DefaultPort, bool discovery = true, bool listen = true)
     {
-        this.self = self; this.name = PeerDirectory.CleanName(name); Directory = directory; requestedPort = port; this.discovery = discovery;
+        this.self = self; this.name = PeerDirectory.CleanName(name); Directory = directory; requestedPort = port; this.discovery = discovery; this.listen = listen;
     }
 
     public void Start()
     {
-        listener = new TcpListener(IPAddress.Any, requestedPort);
-        listener.Start(8);
-        Port = ((IPEndPoint)listener.LocalEndpoint).Port;
-        _ = AcceptLoop(life.Token);
+        if (listen)
+        {
+            listener = new TcpListener(IPAddress.Any, requestedPort);
+            listener.Start(8);
+            Port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            _ = AcceptLoop(life.Token);
+        }
+        else Port = requestedPort;
         _ = ConnectLoop(life.Token);
         if (discovery) StartDiscovery();
+    }
+
+    /// <summary>
+    /// While true this process holds no links: open ones close and none are made or accepted. The app steps aside
+    /// like this while the logon-screen helper speaks for the device on the sign-in or lock screen, so a peer
+    /// never sees two links for one device. Discovery keeps running.
+    /// </summary>
+    public bool Standby
+    {
+        get => standby;
+        set
+        {
+            if (standby == value) return;
+            standby = value;
+            if (value) foreach (var link in Links) link.Close();
+            else lock (gate) backoff.Clear();
+            Diag.Write(value ? "Şifre ekranı açık: bağlantılar şifre ekranı yardımcısına bırakıldı" : "Şifre ekranı kapandı: bağlantılar geri alınıyor");
+            Changed?.Invoke();
+        }
     }
 
     public bool IsConnected(string id) { lock (gate) return links.ContainsKey(id); }
@@ -151,7 +179,7 @@ public sealed class PeerNetwork : IDisposable
         if (Directory.Get(peerId)?.Address is not { } address || !IPEndPoint.TryParse(address, out var endpoint))
             throw new IOException("Diğer bilgisayarın adresi bilinmiyor.");
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, life.Token);
-        var (client, ssl, _) = await PeerLink.ConnectAsync(endpoint, self, id => id == peerId, linked.Token);
+        var (client, ssl, _) = await PeerLink.ConnectAsync(endpoint, self, id => Directory.Resolve(id) == peerId, linked.Token);
         using (client)
         using (ssl)
         {
@@ -182,9 +210,12 @@ public sealed class PeerNetwork : IDisposable
 
     private async Task HandleIncoming(TcpClient client, CancellationToken token)
     {
+        if (standby) { client.Dispose(); return; }
         try
         {
-            var (ssl, peerId) = await PeerLink.AcceptAsync(client, self, token);
+            var (ssl, certificateId) = await PeerLink.AcceptAsync(client, self, token);
+            // A paired device's logon-screen helper presents its own certificate and speaks for that device.
+            var peerId = Directory.Resolve(certificateId);
             try
             {
                 using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
@@ -199,9 +230,13 @@ public sealed class PeerNetwork : IDisposable
                     finally { ssl.Dispose(); client.Dispose(); }
                     return;
                 }
-                if (first.Type == FrameType.PairStart) await AnswerPairing(ssl, peerId, first.As<PairStartMessage>(), deadline.Token);
+                if (first.Type == FrameType.PairStart)
+                {
+                    if (peerId != certificateId) throw new AuthenticationException("Şifre ekranı yardımcısı eşleştiremez.");
+                    await AnswerPairing(ssl, peerId, first.As<PairStartMessage>(), deadline.Token);
+                }
                 else if (!Directory.IsPaired(peerId)) throw new AuthenticationException("Eşleşmemiş cihaz.");
-                Register(new PeerLink(client, ssl, peerId, initiator: false), first.Type is FrameType.Heartbeat or FrameType.PairStart ? null : first);
+                Register(new PeerLink(client, ssl, peerId, initiator: false, certificateId), first.Type is FrameType.Heartbeat or FrameType.PairStart ? null : first);
             }
             catch { ssl.Dispose(); throw; }
         }
@@ -249,7 +284,7 @@ public sealed class PeerNetwork : IDisposable
         while (!token.IsCancellationRequested)
         {
             var now = DateTimeOffset.UtcNow;
-            foreach (var peer in Directory.All)
+            foreach (var peer in standby ? Array.Empty<PeerRecord>() : Directory.All)
             {
                 if (!IPEndPoint.TryParse(peer.Address ?? "", out var endpoint)) continue;
                 lock (gate)
@@ -268,9 +303,9 @@ public sealed class PeerNetwork : IDisposable
     {
         try
         {
-            var (client, ssl, id) = await PeerLink.ConnectAsync(endpoint, self, x => x == peerId, token);
+            var (client, ssl, certificateId) = await PeerLink.ConnectAsync(endpoint, self, x => Directory.Resolve(x) == peerId, token);
             lock (gate) backoff.Remove(peerId);
-            Register(new PeerLink(client, ssl, id, initiator: true), null);
+            Register(new PeerLink(client, ssl, peerId, initiator: true, certificateId), null);
         }
         catch (Exception)
         {
@@ -292,7 +327,7 @@ public sealed class PeerNetwork : IDisposable
         PeerLink? replaced = null;
         lock (gate)
         {
-            if (life.IsCancellationRequested) { link.Close(); return; }
+            if (life.IsCancellationRequested || standby) { link.Close(); return; }
             if (links.TryGetValue(link.PeerId, out var existing) && !existing.IsClosed)
             {
                 if (Preferred(existing) && !Preferred(link)) { link.Close(); return; }
@@ -300,7 +335,7 @@ public sealed class PeerNetwork : IDisposable
             }
             links[link.PeerId] = link;
         }
-        Diag.Write($"Bağlantı kuruldu: {NameOf(link.PeerId)} ({(link.Initiator ? "giden" : "gelen")}, {link.Address})");
+        Diag.Write($"Bağlantı kuruldu: {NameOf(link.PeerId)} ({(link.Initiator ? "giden" : "gelen")}, {link.Address}{(link.CertificateId != link.PeerId ? ", şifre ekranı yardımcısı" : "")})");
         link.Start((l, f) => FrameReceived?.Invoke(l, f), OnClosed, initial, l => LinkUp?.Invoke(l));
         replaced?.Close();
         Changed?.Invoke();

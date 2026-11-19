@@ -2,7 +2,11 @@ using System.Text.Json;
 
 namespace BankoShare.Core;
 
-public sealed record PeerRecord(string Id, string Name, string? Address, MonitorInfo[]? Monitors)
+/// <summary>
+/// LogonId is the certificate fingerprint of the device's logon-screen helper, which connects for it while the
+/// sign-in or lock screen is up. Only the device itself, over a link made with its own certificate, sets it.
+/// </summary>
+public sealed record PeerRecord(string Id, string Name, string? Address, MonitorInfo[]? Monitors, string? LogonId = null)
 {
     public DeviceInfo? LastKnownDevice
     {
@@ -21,6 +25,8 @@ public sealed class SettingsStore(string directory)
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
     private static readonly int[] RetryDelaysMs = [10, 20, 40, 80, 160];
     public string DirectoryPath { get; } = directory;
+    /// <summary>Saves are skipped. The logon-screen helper reads the user's settings but never writes them.</summary>
+    public bool ReadOnly { get; init; }
 
     public T Load<T>(string name, Func<T> fallback)
     {
@@ -40,6 +46,7 @@ public sealed class SettingsStore(string directory)
     /// </summary>
     public void Save<T>(string name, T value)
     {
+        if (ReadOnly) return;
         Directory.CreateDirectory(DirectoryPath);
         var path = Path.Combine(DirectoryPath, name);
         var temp = path + ".tmp";
@@ -114,10 +121,44 @@ public sealed class PeerDirectory
         // Kept in memory if a write fails; the next change writes the whole list again.
         saver = new BackgroundSaver(store);
         foreach (var p in store?.Load<List<PeerRecord>>(FileName, () => []) ?? [])
-            if (p != null && DeviceIds.IsValid(p.Id)) peers[p.Id] = p with { Name = CleanName(p.Name), Monitors = p.LastKnownDevice?.Monitors };
+            if (p != null && DeviceIds.IsValid(p.Id))
+                peers[p.Id] = p with { Name = CleanName(p.Name), Monitors = p.LastKnownDevice?.Monitors, LogonId = DeviceIds.IsValid(p.LogonId) && p.LogonId != p.Id ? p.LogonId : null };
     }
 
     public bool IsPaired(string id) { lock (gate) return peers.ContainsKey(id); }
+
+    /// <summary>
+    /// The paired device a presented certificate speaks for: the device itself, or the device whose logon-screen
+    /// helper it is. Any other fingerprint comes back unchanged (and is not paired).
+    /// </summary>
+    public string Resolve(string fingerprint)
+    {
+        lock (gate)
+        {
+            if (peers.ContainsKey(fingerprint)) return fingerprint;
+            foreach (var p in peers.Values) if (p.LogonId == fingerprint) return p.Id;
+        }
+        return fingerprint;
+    }
+
+    /// <summary>
+    /// Records (or, with null or empty, forgets) the certificate of a paired device's logon-screen helper. A
+    /// fingerprint that is already a paired device or another device's helper is refused. True if anything changed.
+    /// </summary>
+    public bool SetLogonId(string id, string? logonId)
+    {
+        if (string.IsNullOrEmpty(logonId)) logonId = null;
+        else if (!DeviceIds.IsValid(logonId)) throw new ArgumentException("Invalid logon id.", nameof(logonId));
+        lock (gate)
+        {
+            if (!peers.TryGetValue(id, out var old) || old.LogonId == logonId) return false;
+            if (logonId != null && (peers.ContainsKey(logonId) || peers.Values.Any(p => p.Id != id && p.LogonId == logonId))) return false;
+            peers[id] = old with { LogonId = logonId };
+            Persist();
+        }
+        Changed?.Invoke();
+        return true;
+    }
     public PeerRecord? Get(string id) { lock (gate) return peers.GetValueOrDefault(id); }
     public IReadOnlyList<PeerRecord> All { get { lock (gate) return [.. peers.Values.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)]; } }
 
@@ -128,7 +169,7 @@ public sealed class PeerDirectory
         lock (gate)
         {
             var old = peers.GetValueOrDefault(id);
-            var next = new PeerRecord(id, name != null ? CleanName(name) : old?.Name ?? "Yeni cihaz", address ?? old?.Address, monitors ?? old?.Monitors);
+            var next = new PeerRecord(id, name != null ? CleanName(name) : old?.Name ?? "Yeni cihaz", address ?? old?.Address, monitors ?? old?.Monitors, old?.LogonId);
             if (old != null && old.Name == next.Name && old.Address == next.Address && ReferenceEquals(old.Monitors, next.Monitors)) return;
             peers[id] = next;
             Persist();

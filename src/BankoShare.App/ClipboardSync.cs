@@ -95,6 +95,8 @@ internal sealed class ClipboardSync : IDisposable
         if (trigger == Trigger.Pointer) ledger.HandedOff(peer, Environment.TickCount64);
         var options = host.Controller.Options;
         if (!options.ShareClipboard) return;
+        // Its sign-in or lock screen: only the logon-screen helper is there, and it takes no clipboard.
+        if (host.Controller.PeerOnLogonScreen(peer)) return;
         var sequence = Sequence();
         if (ledger.Has(peer, sequence)) return; // nothing new for this machine
         var name = PeerName(peer);

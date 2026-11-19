@@ -46,6 +46,12 @@ public partial class MainWindow : Window
     private SwitchOptions? shownOptions;
     private (DateTimeOffset At, string Text) addresses = (DateTimeOffset.MinValue, "");
     private DateTimeOffset noticeUntil;
+    /// <summary>The optional logon-screen service, read every few seconds.</summary>
+    private LogonScreen.State logon = new(false, false, 0, null, null);
+    private DateTimeOffset logonReadAt;
+    private bool logonBusy;
+    private Timer? helperWatch;
+    private int followingHelper;
 
     public MainWindow()
     {
@@ -87,6 +93,13 @@ public partial class MainWindow : Window
             clipboard.Announce += (title, text) => { if (!host.Suspended) tray.ShowNotice(title, text); };
             if (host.Warning != null) { WarningText.Text = host.Warning; WarningText.Visibility = Visibility.Visible; }
         }
+        if (host != null && !host.IsTestInstance)
+        {
+            RefreshLogon();
+            // A quarter second is well inside the helper's hand-over wait.
+            helperWatch = new Timer(_ => FollowHelper(), null, 250, 250);
+        }
+        else LogonBox.Visibility = Visibility.Collapsed;
         // A second launch (Start menu, desktop shortcut) brings this window back instead of starting another copy.
         if (App.ShowSignal != null)
             showWait = ThreadPool.RegisterWaitForSingleObject(App.ShowSignal, (_, _) => Dispatcher.BeginInvoke(ShowFromTray), null, Timeout.Infinite, false);
@@ -94,7 +107,12 @@ public partial class MainWindow : Window
         updates.RestartHidden = () => !IsVisible;
         updates.RestartPending = pending => tray.Visible = !pending;
         updatePoll.Tick += async (_, _) => { if (updater.Automatic) await updater.CheckAsync(lifetime.Token); };
-        tick.Tick += (_, _) => { ApplyGameMode(); updater.Tick(DateTimeOffset.Now, Busy); RefreshUpdates(); Refresh(); };
+        tick.Tick += (_, _) =>
+        {
+            ApplyGameMode(); updater.Tick(DateTimeOffset.Now, Busy); RefreshUpdates();
+            if (helperWatch != null && !logonBusy && DateTimeOffset.Now - logonReadAt > TimeSpan.FromSeconds(5)) RefreshLogon();
+            Refresh();
+        };
         // Not ContentRendered: when Windows starts us in the tray the window is never rendered.
         Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, async () =>
         {
@@ -173,6 +191,7 @@ public partial class MainWindow : Window
         SystemEvents.SessionSwitch -= SessionChanged;
         SystemEvents.PowerModeChanged -= PowerChanged;
         SystemEvents.DisplaySettingsChanged -= DisplayChanged;
+        helperWatch?.Dispose();
         tray.Dispose();
         clipboard?.Dispose();
         host?.Dispose();
@@ -201,6 +220,87 @@ public partial class MainWindow : Window
     }
 
     private void Exit_Click(object sender, RoutedEventArgs e) => ExitApplication();
+
+    // ---- Sign-in and lock screens ----
+
+    /// <summary>
+    /// Timer thread. While the logon-screen helper speaks for this device (a secure desktop is in front), the app
+    /// holds no links, so the paired computer sees one link, the helper's. Before stepping aside the pointer comes
+    /// home and held keys are released.
+    /// </summary>
+    private void FollowHelper()
+    {
+        if (Interlocked.Exchange(ref followingHelper, 1) == 1) return;
+        try
+        {
+            if (host == null || disposed) return;
+            var active = LogonScreen.HelperActive();
+            if (active == host.Network.Standby) return;
+            if (active)
+            {
+                host.Controller.ReturnHome();
+                host.Controller.WaitForInput(TimeSpan.FromMilliseconds(300));
+            }
+            host.Network.Standby = active;
+            Dispatcher.BeginInvoke(QueueRefresh);
+        }
+        catch (Exception e) { Diag.Write("Şifre ekranı denetimi: " + e.Message); }
+        finally { Volatile.Write(ref followingHelper, 0); }
+    }
+
+    /// <summary>Reads the service state, tells paired computers about the helper's certificate and updates the page.</summary>
+    private void RefreshLogon()
+    {
+        logonReadAt = DateTimeOffset.Now;
+        logon = LogonScreen.Read();
+        // Installed without a certificate yet: the helper writes it within seconds of starting; say nothing until then.
+        try { if (host != null) host.Controller.LogonId = logon.Installed ? logon.HelperId : ""; }
+        catch (ArgumentException) { /* An unreadable certificate file is not announced. */ }
+        if (logonBusy) return;
+        LogonBox.IsChecked = logon.Installed;
+        LogonUpdateButton.Visibility = logon.Outdated ? Visibility.Visible : Visibility.Collapsed;
+        LogonNote.Text = !logon.Installed
+            ? "Bilgisayar açılınca, oturum açmadan önce de çalışır: şifre ekranında ve kilit ekranında diğer bilgisayarın fare ve klavyesiyle şifrenizi girebilirsiniz. Açmak için bir kez Windows yönetici onayı gerekir; diğer bilgisayarda da Banko Share 0.6 veya üstü olmalı."
+            : logon.Outdated ? $"Açık, ancak şifre ekranı bölümü eski (v{logon.Version ?? "?"}). Güncellemek için bir kez Windows yönetici onayı gerekir."
+            : !logon.Running ? "Kurulu ama şu an çalışmıyor. Kutuyu kapatıp yeniden açmayı deneyin."
+            : "Açık. Şifre veya kilit ekranı çıktığında diğer bilgisayar bu bilgisayarı kontrol edebilir; masaüstünde bu bölüm hiçbir şey yapmaz. Diğer bilgisayarda da Banko Share 0.6 veya üstü olmalı.";
+    }
+
+    private async void Logon_Click(object sender, RoutedEventArgs e)
+    {
+        var install = LogonBox.IsChecked == true;
+        // The box shows the real state until Windows confirms the change.
+        LogonBox.IsChecked = logon.Installed;
+        await ChangeLogon(install);
+    }
+
+    private async void LogonUpdate_Click(object sender, RoutedEventArgs e) => await ChangeLogon(true);
+
+    private async Task ChangeLogon(bool install)
+    {
+        if (host == null || logonBusy) return;
+        logonBusy = true;
+        LogonBox.IsEnabled = LogonUpdateButton.IsEnabled = false;
+        LogonNote.Text = install ? "Windows yönetici onayı istiyor; kurulum birkaç saniye sürer…" : "Windows yönetici onayı istiyor…";
+        // Only an installed copy has a folder that Windows removes on uninstall; the service watches it.
+        var installRoot = updates.IsInstalled ? System.IO.Path.GetDirectoryName(AppContext.BaseDirectory.TrimEnd('\\')) ?? "" : "";
+        var arguments = install
+            ? $"{LogonScreen.InstallArgument} {LogonScreen.Quote(host.SettingsPath)} {LogonScreen.Quote(installRoot)}"
+            : LogonScreen.UninstallArgument;
+        int? code;
+        try { code = await LogonScreen.RunElevatedAsync(arguments); }
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException) { code = -1; Diag.Write("Şifre ekranı kurulumu başlatılamadı: " + ex.Message); }
+        Diag.Write($"Şifre ekranı {(install ? "kurulumu" : "kaldırma")}: {(code == null ? "onay verilmedi" : $"çıkış kodu {code}")}");
+        logonBusy = false;
+        LogonBox.IsEnabled = LogonUpdateButton.IsEnabled = true;
+        RefreshLogon();
+        ShowNotice(code switch
+        {
+            null => "Yönetici onayı verilmedi; bir şey değişmedi.",
+            0 => install ? "Şifre ekranında çalışma açıldı." : "Şifre ekranında çalışma kapatıldı.",
+            _ => $"İşlem tamamlanamadı (kod {code}). Ayrıntı: {System.IO.Path.Combine(LogonScreen.LogDirectory, "setup.log")}"
+        });
+    }
 
     /// <summary>
     /// Steps aside while a locked game is in front (or runs, if so chosen) or another sharing program (ShareMouse…)
@@ -304,6 +404,7 @@ public partial class MainWindow : Window
         var connected = s.Peers.Count(p => p.Connected);
         (StatusText.Text, StatusDot.Fill) = s switch
         {
+            _ when host.Network.Standby => ("Şifre veya kilit ekranı açık · bağlantıyı şifre ekranı bölümü yürütüyor", Connected),
             { Paused: true } => (pauseReason ?? "Banko Share bu bilgisayarda duraklatıldı", Warning),
             { ControllingName: { } name } => ($"Fare ve klavye şu an {name} bilgisayarında · geri dönmek için Esc Esc", Sharing),
             { ControlledByName: { } name } => ($"{name} bu bilgisayarı kontrol ediyor · fareyi oynatarak geri alın", Sharing),
@@ -326,7 +427,7 @@ public partial class MainWindow : Window
 
     private void RefreshPeers(ShareSnapshot s)
     {
-        var signature = string.Join("|", s.Peers.Select(p => $"{p.Id}:{p.Name}:{p.Connected}:{p.Paused}:{p.Version}:{p.Address}"));
+        var signature = string.Join("|", s.Peers.Select(p => $"{p.Id}:{p.Name}:{p.Connected}:{p.Paused}:{p.Version}:{p.Address}:{p.LogonScreen}"));
         if (signature == peersSignature) return;
         peersSignature = signature;
         PeersPanel.Children.Clear();
@@ -345,7 +446,7 @@ public partial class MainWindow : Window
             row.Children.Add(new Ellipse { Width = 9, Height = 9, Fill = p.Connected ? Connected : Idle, Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center });
             var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
             text.Children.Add(new TextBlock { Text = p.Name, FontWeight = FontWeights.SemiBold });
-            text.Children.Add(new TextBlock { Text = (p.Connected ? p.Paused ? "Bağlı · şu an kilitli (oyun önde ya da başka paylaşım programı açık)" : "Bağlı" : "Bağlı değil") + (p.Version != null ? " · v" + p.Version.Split('+')[0] : "") + (p.Version != null && !Versions.AtLeast(p.Version, 0, 5) ? " · eski sürüm, güncellenmeli" : "") + (p.Address != null ? " · " + p.Address : ""), Foreground = Muted, FontSize = 12 });
+            text.Children.Add(new TextBlock { Text = (p.Connected ? p.LogonScreen ? "Bağlı · şifre ekranında" : p.Paused ? "Bağlı · şu an kilitli (oyun önde ya da başka paylaşım programı açık)" : "Bağlı" : "Bağlı değil") + (p.Version != null ? " · v" + p.Version.Split('+')[0] : "") + (p.Version != null && !Versions.AtLeast(p.Version, 0, 5) ? " · eski sürüm, güncellenmeli" : "") + (p.Address != null ? " · " + p.Address : ""), Foreground = Muted, FontSize = 12 });
             row.Children.Add(text);
             PeersPanel.Children.Add(row);
         }

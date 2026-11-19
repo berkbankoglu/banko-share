@@ -1,13 +1,14 @@
-## Banko Share 0.5.4: yeni logo
+## Banko Share 0.6.0: şifre ve kilit ekranında da çalışır
 
-Kurulu sürüm bu güncellemeyi kendiliğinden alır. Hemen almak için **Uygulama → Şimdi kontrol et** seçin.
+Hemen almak için **Uygulama → Şimdi kontrol et** seçin.
 
-### Değişiklikler
+### Yenilikler
 
-- **Yeni logo:** Koyu karonun üzerindeki küçük imlecin yerini simgenin tamamını kaplayan büyük, turuncu bir imleç aldı. Görev çubuğunda, bildirim alanında ve pencerede daha büyük ve daha kolay seçilir görünür; koyu ve açık görev çubuğunda aynı şekilde okunur.
-- **Bildirim alanındaki durum:** Bir bilgisayar bağlıyken imlecin sağ üstünde yeşil bir nokta, imleç paylaşılırken halkalı bir nokta görünür.
-- Windows eski simgeyi bir süre önbellekte tutabilir. Görev çubuğuna sabitlenmiş simge hemen değişmezse sabitlemeyi kaldırıp yeniden sabitleyin ya da bilgisayarı yeniden başlatın.
-
-0.5.3'ten beri oyun kilidi Steam oyunlarını ve imleci penceresinde tutan oyunları da tanır.
+- **Şifre ve kilit ekranı:** **Uygulama** sayfasındaki **Şifre ekranında da çalış** seçeneğini açın. Bilgisayar açılınca, daha oturum açılmadan şifre ekranında da diğer bilgisayarın faresi ve klavyesiyle kullanılabilir; şifrenizi diğer bilgisayardan girersiniz. Kilit ekranında da çalışır.
+  - Açmak için bir kez Windows yönetici onayı gerekir. Bilgisayar açılınca başlayan küçük bir Windows hizmeti kurulur.
+  - Diğer bilgisayarda da Banko Share 0.6 veya üstü olmalı. İki bilgisayar 0.6 ile bir kez bağlandıktan sonra hazırdır.
+  - Masaüstündeyken bu bölüm hiçbir şey yapmaz: fareye ve klavyeye dokunmaz, bağlantı açmaz, oyunlara ve başka programlara bakmaz.
+  - Yönetici onayı (UAC) ekranı güvenlik gereği dahil değildir.
+- **Cihazlar** sayfası, diğer bilgisayar şifre ekranındaysa bunu gösterir. O sırada pano gönderilmez.
 
 Bu bir geliştirme önizlemesidir. Windows kod imzalama sertifikası henüz yoktur.

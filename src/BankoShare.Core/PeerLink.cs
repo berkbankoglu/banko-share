@@ -29,14 +29,17 @@ public sealed class PeerLink
     private Action<PeerLink>? onClosed;
     private int closed;
 
+    /// <summary>The paired device on the other end.</summary>
     public string PeerId { get; }
+    /// <summary>The certificate it presented: <see cref="PeerId"/>, or its logon-screen helper's certificate.</summary>
+    public string CertificateId { get; }
     public bool Initiator { get; }
     public IPAddress Address { get; }
     public bool IsClosed => Volatile.Read(ref closed) != 0;
 
-    internal PeerLink(TcpClient client, SslStream stream, string peerId, bool initiator)
+    internal PeerLink(TcpClient client, SslStream stream, string peerId, bool initiator, string? certificateId = null)
     {
-        this.client = client; this.stream = stream; PeerId = peerId; Initiator = initiator;
+        this.client = client; this.stream = stream; PeerId = peerId; Initiator = initiator; CertificateId = certificateId ?? peerId;
         client.NoDelay = true;
         Address = (client.Client.RemoteEndPoint as IPEndPoint)?.Address.MapToIPv4() ?? IPAddress.None;
     }
@@ -146,7 +149,7 @@ public sealed class PeerLink
                 {
                     if (cert == null) return false;
                     var id = DeviceIdentity.Fingerprint(cert);
-                    if (id == self.Id || !acceptServer(id)) return false;
+                    if (id == self.Id || id == self.CertificateId || !acceptServer(id)) return false;
                     peerId = id; return true;
                 }
             }, deadline.Token);
@@ -173,7 +176,7 @@ public sealed class PeerLink
                 RemoteCertificateValidationCallback = (_, cert, _, _) => cert != null
             }, deadline.Token);
             var id = DeviceIdentity.Fingerprint(ssl.RemoteCertificate ?? throw new AuthenticationException("İstemci sertifikası yok."));
-            if (id == self.Id) throw new AuthenticationException("Kendine bağlantı.");
+            if (id == self.Id || id == self.CertificateId) throw new AuthenticationException("Kendine bağlantı.");
             return (ssl, id);
         }
         catch { ssl.Dispose(); throw; }

@@ -3,11 +3,18 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace BankoShare.Core;
 
-/// <summary>A device's TLS certificate with private key. The certificate fingerprint is the device id.</summary>
-public sealed class DeviceIdentity(X509Certificate2 certificate) : IDisposable
+/// <summary>
+/// A device's TLS certificate with private key. The certificate fingerprint is the device id, except for the
+/// logon-screen helper: it presents its own certificate but speaks for the device, so <paramref name="id"/> is
+/// the device's id and peers that were told about the helper's certificate map one to the other.
+/// </summary>
+public sealed class DeviceIdentity(X509Certificate2 certificate, string? id = null) : IDisposable
 {
     public X509Certificate2 Certificate { get; } = certificate.HasPrivateKey ? certificate : throw new ArgumentException("Private key required.");
-    public string Id { get; } = Fingerprint(certificate);
+    /// <summary>The id peers know this device by.</summary>
+    public string Id { get; } = id == null ? Fingerprint(certificate) : DeviceIds.IsValid(id) ? id : throw new ArgumentException("Invalid device id.", nameof(id));
+    /// <summary>Fingerprint of the certificate this process presents; differs from <see cref="Id"/> for the logon-screen helper.</summary>
+    public string CertificateId { get; } = Fingerprint(certificate);
 
     public static string Fingerprint(X509Certificate certificate) => Convert.ToHexString(certificate.GetCertHash(HashAlgorithmName.SHA256));
 

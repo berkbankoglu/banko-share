@@ -5,17 +5,49 @@ using BankoShare.Core;
 
 namespace BankoShare.App;
 
-/// <summary>Device identity whose RSA key lives in the user's Windows key store and cannot be exported.</summary>
+/// <summary>
+/// Device identities whose RSA keys live in a Windows key store and cannot be exported: the app's in the user's
+/// store, the logon-screen helper's in the machine store (SYSTEM and administrators only), because before
+/// sign-in the user's keys cannot be opened.
+/// </summary>
 internal static class IdentityStore
 {
+    public const string CertificateFile = "identity.cer";
     private const string KeyName = "BankoShare.DeviceIdentity.v1";
+    public const string LogonKeyName = "BankoShare.LogonIdentity.v1";
 
-    public static DeviceIdentity LoadOrCreate(string directory)
+    public static DeviceIdentity LoadOrCreate(string directory) => Load(Path.Combine(directory, CertificateFile), KeyName, machine: false, deviceId: null);
+
+    /// <summary>The helper's own certificate, speaking for <paramref name="deviceId"/>. SYSTEM or an administrator only.</summary>
+    public static DeviceIdentity LoadOrCreateLogon(string certificatePath, string? deviceId) => Load(certificatePath, LogonKeyName, machine: true, deviceId);
+
+    /// <summary>The id in a stored certificate, or null when there is none.</summary>
+    public static string? ReadId(string certificatePath)
     {
-        Directory.CreateDirectory(directory);
-        var certificatePath = Path.Combine(directory, "identity.cer");
-        using var key = CngKey.Exists(KeyName) ? CngKey.Open(KeyName) : CngKey.Create(CngAlgorithm.Rsa, KeyName, new CngKeyCreationParameters
+        try
         {
+            using var stored = X509CertificateLoader.LoadCertificateFromFile(certificatePath);
+            return DeviceIdentity.Fingerprint(stored);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or CryptographicException) { return null; }
+    }
+
+    public static void DeleteLogonKey()
+    {
+        if (!CngKey.Exists(LogonKeyName, CngProvider.MicrosoftSoftwareKeyStorageProvider, CngKeyOpenOptions.MachineKey)) return;
+        using var key = CngKey.Open(LogonKeyName, CngProvider.MicrosoftSoftwareKeyStorageProvider, CngKeyOpenOptions.MachineKey);
+        key.Delete();
+    }
+
+    private static DeviceIdentity Load(string certificatePath, string keyName, bool machine, string? deviceId)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(certificatePath)!);
+        var provider = CngProvider.MicrosoftSoftwareKeyStorageProvider;
+        var open = machine ? CngKeyOpenOptions.MachineKey : CngKeyOpenOptions.None;
+        using var key = CngKey.Exists(keyName, provider, open) ? CngKey.Open(keyName, provider, open) : CngKey.Create(CngAlgorithm.Rsa, keyName, new CngKeyCreationParameters
+        {
+            Provider = provider,
+            KeyCreationOptions = machine ? CngKeyCreationOptions.MachineKey : CngKeyCreationOptions.None,
             ExportPolicy = CngExportPolicies.None,
             KeyUsage = CngKeyUsages.AllUsages,
             Parameters = { new CngProperty("Length", BitConverter.GetBytes(2048), CngPropertyOptions.None) }
@@ -26,12 +58,12 @@ internal static class IdentityStore
             using var stored = X509CertificateLoader.LoadCertificateFromFile(certificatePath);
             using var publicKey = stored.GetRSAPublicKey();
             if (publicKey != null && publicKey.ExportSubjectPublicKeyInfo().AsSpan().SequenceEqual(rsa.ExportSubjectPublicKeyInfo()))
-                return new DeviceIdentity(stored.CopyWithPrivateKey(rsa));
+                return new DeviceIdentity(stored.CopyWithPrivateKey(rsa), deviceId);
         }
         // Only the public certificate is written to disk.
         var created = DeviceIdentity.Request(rsa).CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(20));
         File.WriteAllBytes(certificatePath, created.RawData);
-        return new DeviceIdentity(created);
+        return new DeviceIdentity(created, deviceId);
     }
 }
 

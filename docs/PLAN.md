@@ -102,5 +102,5 @@ Hepsi varsayılan olarak kapalıdır; açılmadıkça 0.3.0 davranışı değiş
 
 ## Bilinen sınırlar
 
-- Yönetici yetkisiyle çalışan pencereler, UAC, kilit ekranı ve Ctrl+Alt+Del için Windows normal kullanıcı uygulamasına izin vermez. Bunlar ayrı bir yetkili hizmet gerektirir; Aşama 6'dan sonra değerlendirilecek.
+- Şifre ve kilit ekranı 0.6'dan beri isteğe bağlı bir Windows hizmetiyle (yalnızca bu ekranlarda çalışan SYSTEM yardımcısı) kontrol edilir. Yönetici yetkisiyle çalışan pencereler ve Ctrl+Alt+Del yine kapalıdır. UAC ekranı bilerek dışarıda bırakıldı: kullanıcı ayarlarına eşleşmiş bilgisayar ekleyebilen bir program, oradan kendi yükseltmesini onaylayabilirdi.
 - Test sırasında ShareMouse iki bilgisayarda da kapalı olmalı. Aynı kenarı iki uygulama birden yakalarsa imleç iki yere birden geçmeye çalışır.

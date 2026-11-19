@@ -45,20 +45,28 @@ public readonly record struct InputEvent(EventKind Kind, int A = 0, int B = 0, i
 
 /// <summary>
 /// LegacyPairRequest is the 0.3 pairing request; it is refused. TransferStart opens a separate connection for a
-/// clipboard hand-off; LogRequest/LogResponse fetch a peer's diagnostic log. Peers before 0.5 do not know the
-/// last three and drop a link that carries them, so they are only sent to 0.5 or later.
+/// clipboard hand-off; LogRequest/LogResponse fetch a peer's diagnostic log. Peers before 0.5 do not know those
+/// three and drop a link that carries them, so they are only sent to 0.5 or later. LogonIdentity (0.6) names the
+/// device's logon-screen helper and is only sent to 0.6 or later.
 /// </summary>
 public enum FrameType : byte
 {
     Heartbeat, Hello, Layout, Enter, Input, Leave, Reclaim, LegacyPairRequest, PairAccepted, PairStart, PairReply, PairFinish,
-    TransferStart, LogRequest, LogResponse
+    TransferStart, LogRequest, LogResponse, LogonIdentity
 }
 
 /// <summary>
 /// Port is the sender's listening port; an inbound connection only reveals an ephemeral one. Paused means the
 /// sender takes no input at the moment (an anti-cheat-protected game runs there); 0.4.0 peers omit it.
+/// LogonScreen: the logon-screen helper sends this, the device shows its sign-in or lock screen (0.6).
 /// </summary>
-public sealed record HelloMessage(DeviceInfo Device, string Version, int Port, bool Paused = false);
+public sealed record HelloMessage(DeviceInfo Device, string Version, int Port, bool Paused = false, bool LogonScreen = false);
+/// <summary>
+/// Certificate fingerprint of the sender's logon-screen helper, or "" when it has none. The helper runs as SYSTEM
+/// on the sign-in and lock screens, where the app cannot, and uses a key of its own because the app's key
+/// lives in the user's key store, out of reach before sign-in.
+/// </summary>
+public sealed record LogonIdentityMessage(string Id);
 /// <summary>SPAKE2 messages; byte fields are Base64.</summary>
 public sealed record PairStartMessage(string Element, string Name);
 public sealed record PairReplyMessage(string Element, string Confirmation);
@@ -139,7 +147,7 @@ public readonly record struct Frame(FrameType Type, byte[] Payload)
         FrameType.Heartbeat or FrameType.Leave or FrameType.Reclaim or FrameType.PairAccepted or FrameType.LogRequest => length == 0,
         FrameType.Enter or FrameType.Input => length == InputEvent.Size,
         FrameType.Hello or FrameType.Layout or FrameType.LogResponse => length is > 0 and <= MaxPayload,
-        FrameType.PairStart or FrameType.PairReply or FrameType.PairFinish or FrameType.TransferStart => length is > 0 and <= 1024,
+        FrameType.PairStart or FrameType.PairReply or FrameType.PairFinish or FrameType.TransferStart or FrameType.LogonIdentity => length is > 0 and <= 1024,
         _ => false
     };
 }

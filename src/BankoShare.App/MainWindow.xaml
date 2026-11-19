@@ -347,7 +347,7 @@
     </StackPanel></Border>
     <Border Style="{StaticResource Card}"><StackPanel>
      <TextBlock Text="Sınırlar" Style="{StaticResource Heading}"/>
-     <TextBlock Style="{StaticResource Note}" Text="Yönetici olarak çalışan pencereler, UAC ekranı, kilit ekranı ve Ctrl+Alt+Del bu sürümde uzaktan kontrol edilemez. ShareMouse gibi başka bir paylaşım uygulaması aynı anda açıksa kapatın."/>
+     <TextBlock Style="{StaticResource Note}" Text="Yönetici olarak çalışan pencereler ve yönetici onayı (UAC) ekranı güvenlik gereği uzaktan kontrol edilemez. Şifre ve kilit ekranı için Uygulama sayfasında “Şifre ekranında da çalış” seçeneğini açın. ShareMouse gibi başka bir paylaşım uygulaması aynı anda açıksa kapatın."/>
     </StackPanel></Border>
    </StackPanel></ScrollViewer>
 
@@ -359,6 +359,9 @@
      <TextBlock Style="{StaticResource Note}" Text="Pencereyi kapattığınızda Banko Share saatin yanındaki bildirim alanında çalışmaya devam eder; fare ve klavye paylaşımı sürer. Simgeye tıklayınca pencere açılır, sağ tıklayınca menü çıkar."/>
      <CheckBox x:Name="AutostartBox" Content="Windows açılınca başlat" Margin="0,14,0,0" Checked="Autostart_Changed" Unchecked="Autostart_Changed"/>
      <TextBlock x:Name="AutostartNote" Style="{StaticResource Note}" Margin="28,4,0,0"/>
+     <CheckBox x:Name="LogonBox" Content="Şifre ekranında da çalış (oturum açmadan önce)" Margin="0,14,0,0" Click="Logon_Click"/>
+     <TextBlock x:Name="LogonNote" Style="{StaticResource Note}" Margin="28,4,0,0"/>
+     <Button x:Name="LogonUpdateButton" Content="Şifre ekranı bölümünü güncelle" Style="{StaticResource Secondary}" Click="LogonUpdate_Click" HorizontalAlignment="Left" Margin="28,8,0,0" Visibility="Collapsed"/>
      <Button Content="Banko Share'den çık" Style="{StaticResource Secondary}" Click="Exit_Click" HorizontalAlignment="Left" Margin="0,16,0,0"/>
      <TextBlock Style="{StaticResource Note}" FontSize="12" Text="Çıkınca paylaşım durur; diğer bilgisayar bu bilgisayara geçemez."/>
     </StackPanel></Border>

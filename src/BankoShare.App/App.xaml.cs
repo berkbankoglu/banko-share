@@ -10,6 +10,8 @@ public partial class App : Application
     [STAThread]
     public static void Main()
     {
+        // The logon-screen service, its helper and their elevated setup are this program in another role.
+        if (LogonScreen.TryRun(Environment.GetCommandLineArgs()[1..]) is { } exitCode) { Environment.ExitCode = exitCode; return; }
         Velopack.VelopackApp.Build().SetAutoApplyOnStartup(false).Run();
         var testPort = Environment.GetEnvironmentVariable("BANKOSHARE_TEST_PORT");
         var name = "Local\\BankoShare.App" + (string.IsNullOrEmpty(testPort) ? "" : ".Test" + testPort);

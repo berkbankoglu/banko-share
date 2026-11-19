@@ -10,6 +10,7 @@ passed += LayoutTests.Run();
 passed += SwitchEngineTests.Run();
 passed += SwitchOptionsTests.Run();
 passed += await NetworkTests.Run();
+passed += await LogonTests.Run();
 passed += await ClipboardTests.Run();
 passed += await UpdateTests.Run();
 passed += InputStateTests.Run();

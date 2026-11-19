@@ -322,7 +322,7 @@ internal static class NetworkTests
         return s.Count;
     }
 
-    private static CancellationToken Timeout() => new CancellationTokenSource(TimeSpan.FromSeconds(15)).Token;
+    internal static CancellationToken Timeout() => new CancellationTokenSource(TimeSpan.FromSeconds(15)).Token;
 
     internal sealed class Node : IDisposable
     {
@@ -345,9 +345,9 @@ internal static class NetworkTests
             return new Node { Name = name, Identity = identity, Network = network, Store = store };
         }
 
-        public Node WithController(MonitorInfo[] monitors, ISwitchEnvironment? environment = null)
+        public Node WithController(MonitorInfo[] monitors, ISwitchEnvironment? environment = null, string version = "test")
         {
-            Controller = new ShareController(new DeviceInfo(Id, Name, monitors), Network, Platform, Store, "test", environment);
+            Controller = new ShareController(new DeviceInfo(Id, Name, monitors), Network, Platform, Store, version, environment);
             return this;
         }
 

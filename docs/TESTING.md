@@ -1,5 +1,21 @@
 # Doğrulama kayıtları ve kabul testleri
 
+## Şifre ve kilit ekranı — 19.11.2026, v0.6.0
+
+Otomatik (76 test, hepsi geçti; 5'i yeni):
+
+- Yardımcı sertifikası yalnızca eşleşmiş bir cihaz için kaydedilir; eşleşmiş başka bir cihazın kimliği ya da iki cihazın ortak yardımcısı olamaz; unutulan yardımcı artık cihaz adına konuşamaz.
+- Gerçek TLS üzerinde: cihazın tanıtmadığı bir sertifika onun adına bağlanamaz. Cihaz kendi bağlantısından tanıttıktan sonra yardımcı onun adına bağlanır; karşı taraf `PeerId` = cihaz, `CertificateId` = yardımcı görür. Uygulama beklemedeyken bağlantı tutmaz ve kabul etmez. Yardımcı kendi bağlantısından başka bir yardımcı tanıtamaz. Karşı taraftan gelen imleç ve tuşlar yardımcıya ulaşır. Yardımcı kapanınca uygulama yeniden bağlanır.
+- 0.6 öncesi sürümlere yeni çerçeve gönderilmez (anlamadıkları çerçevede bağlantıyı kapatırlar).
+- Yardımcının salt okunur ayar deposu kullanıcının dosyalarına yazmaz.
+
+Elle (BANKOARTS, yöneticisiz):
+
+- Derlenmiş uygulama üzerinde sonda: hizmet kurulu değilken durum `Installed = False`, yardımcı sinyali yok, giriş masaüstü `Default`, uygulama dışı komut satırı modları `--tray` gibi normal argümanları yakalamıyor.
+- `WTSQuerySessionInformationW` bellek düzeni canlı doğrulandı: oturum 1 için kullanıcı `brkbn`, istasyon `Console`, kilit bayrağı 1 (açık). ANSI sürümü yanlış ofset veriyordu; uygulama Unicode sürümü çağırıyor.
+- Yayın çıktısında `System.ServiceProcess.ServiceController.dll` Windows uygulamasıdır (91 400 bayt; yer tutucu 35 096 bayt).
+
+Bekleyen (yönetici onayı ve iki bilgisayar gerekir): hizmetin kurulumu, yardımcının SYSTEM olarak oturum 1'de başlaması, Win+L ile kilit ekranında diğer bilgisayardan şifre girilmesi, yeniden başlatma sonrası şifre ekranı, seçeneği kapatınca hizmetin ve dosyaların kaldırılması.
 ## Her oyunda oyun kilidi — 14.11.2026, v0.5.3
 
 **Bildirim:** Oyundayken imleç diğer ekrana geçiyordu. Oyun tam ekran değildi.

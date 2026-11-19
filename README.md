@@ -32,6 +32,10 @@ Eşleştirme kalıcıdır. Sonraki açılışlarda iki uygulama birbirini bulup 
   - Simgeye tıklayınca pencere açılır.
   - Sağ tık menüsünde kenardan geçiş, bu bilgisayara dönme, Windows ile başlatma ve **Çıkış** vardır.
   - Kurulu sürüm Windows açılınca bildirim alanında başlar. Bu, **Uygulama** sayfasından kapatılabilir.
+- **Şifre ve kilit ekranı** (**Uygulama** sayfası, isteğe bağlı): Açılınca bilgisayar daha oturum açılmadan, şifre ekranındayken de diğer bilgisayarın faresi ve klavyesiyle kullanılabilir; şifre diğer bilgisayardan girilir. Kilit ekranında da çalışır.
+  - Açmak için bir kez Windows yönetici onayı gerekir. Diğer bilgisayarda da Banko Share 0.6 veya üstü olmalı; iki bilgisayar 0.6 ile bir kez bağlanınca hazırdır.
+  - Masaüstünde bu bölüm hiçbir şey yapmaz: kanca kurmaz, bağlantı açmaz, giriş göndermez, başka programa bakmaz.
+  - Yönetici onayı (UAC) ekranı güvenlik gereği dahil değildir.
 - **Pano ve dosyalar:** Kopyaladığınız şey imleçle birlikte diğer bilgisayara geçer; orada Ctrl+V ile yapıştırılır. İmleç geri gelince orada kopyalanan da buraya gelir.
   - İmleç diğer bilgisayardayken orada kopyalanan metin ve resim hemen bu bilgisayara da gelir.
   - Kontrol edilen bilgisayarın kendi faresi devreye girerse, oradaki pano da imlecin döndüğü bilgisayara gider.
@@ -73,12 +77,18 @@ Eşleştirme kalıcıdır. Sonraki açılışlarda iki uygulama birbirini bulup 
   - Ağdaki bir saldırgan kodu bilgisayarında deneme-yanılmayla çözemez. Her bağlantı denemesi tek bir tahmine izin verir ve 5 denemede kod iptal olur.
 - Ağda bulma UDP 24820 yayınıyla yapılır. Bu yalnızca adres ipucudur; güven her zaman sabitlenmiş sertifikadan gelir. Bağlantılar TCP 24819 üzerindendir.
 - Her bağlantıda 0,5 sn'de bir kalp atışı gider; 3 sn sessizlik bağlantıyı kapatır. Kopan bağlantılar artan bekleme süreleriyle yeniden kurulur.
-- Hesap, bulut sunucusu, telemetri veya tuş kaydı yoktur. Sürücü kurulmaz; her şey kullanıcı düzeyinde çalışır.
+- Hesap, bulut sunucusu, telemetri veya tuş kaydı yoktur. Sürücü kurulmaz. İsteğe bağlı şifre ekranı bölümü dışında her şey kullanıcı düzeyinde çalışır.
 - Başka programların süreçleri açılmaz. Program, oyun ve diğer paylaşım programlarının adları Windows'un süreç listesinden okunur. Hile önleme sürücüleri, başka programların oyun süreçlerini açmasını izler.
 - Pano içeriği ve dosyalar, giriş bağlantısından ayrı, aynı sabitlenmiş sertifikalarla kurulan ikinci bir TLS bağlantısıyla aktarılır. Alıcı önce başlığı denetler: her yol göreli olmalı, alınan klasörün dışına çıkamaz (`..`, sürücü adı, ayrılmış aygıt adları reddedilir), boyut ve öğe sayısı sınırlıdır ve diskte yer olmalıdır. Yarım kalan aktarımın klasörü silinir.
 - Fare kancası bekçisi: imleç hareket ettiği hâlde kancaya 1,5 saniye olay gelmezse kancalar yeniden kurulur. İmleç diğer bilgisayarda değilken görünür kalmış gizleme penceresi kapatılır.
 - Tanılama kaydı `%LocalAppData%\BankoShare.Settings\logs\banko-share.log` dosyasına yazılır (2 MB'ta döner); tuşlar ve pano içeriği yazılmaz.
 - Windows ile başlatma, kullanıcıya ait `HKCU\…\Run` kaydıyla yapılır ve yalnızca Setup ile kurulan sürüm için açılır.
+- Şifre ve kilit ekranı: uygulama bu ekranlara erişemez, bu yüzden isteğe bağlı bir Windows hizmeti (`BankoShareLogon`, LocalSystem) açılışta başlar ve konsol oturumunda SYSTEM olarak küçük bir yardımcı çalıştırır.
+  - Hizmetin dosyaları `C:\Program Files\BankoShare` içine kopyalanır; oraya yalnızca yönetici ve SYSTEM yazabilir. Kullanıcının değiştirebileceği bir dosya SYSTEM olarak çalıştırılmaz.
+  - Yardımcı yalnızca giriş masaüstü şifre veya kilit ekranıyken çalışır (oturum açılmamış ya da kilitli). O sırada uygulama bağlantılarını bırakır, yardımcı eşleşmiş bilgisayarlara bu cihaz adına bağlanır ve gelen fare/klavyeyi uygular. Masaüstüne dönülünce kapanır ve uygulama devralır.
+  - Kullanıcının anahtarı oturum açılmadan açılamaz; yardımcının makine anahtar deposunda (yalnızca SYSTEM ve yöneticiler) ayrı bir sertifikası vardır. Uygulama bu sertifikanın parmak izini kendi sertifikasıyla kurduğu bağlantı üzerinden eşleşmiş bilgisayara bildirir; yalnızca cihazın kendisi yardımcısını tanıtabilir.
+  - Yardımcı kullanıcının ayarlarını yalnızca okur. Kayıtları `C:\Program Files\BankoShare\data\logs` içindedir.
+  - Banko Share kaldırılırsa hizmet beş dakika içinde kendini kaldırır.
 - Ayarlar `%LocalAppData%\BankoShare.Settings` içinde tutulur: eşleşen cihazlar, düzen, tercihler ve açık sertifika. Dosyalar arka planda, geçici dosya üzerinden atomik olarak yazılır. Virüs tarayıcısı dosyayı kısa süre tutarsa yazma yeniden denenir. Fare kancası diske hiç beklemez.
 
 ## Güncellemeler
@@ -105,7 +115,7 @@ Testler gerçek loopback TLS bağlantılarıyla eşleştirme, yanlış kod ve se
 
 ## Sınırlar
 
-- Yönetici olarak çalışan pencereler, UAC, kilit ekranı ve Ctrl+Alt+Del normal kullanıcı uygulamasına kapalıdır.
+- Yönetici olarak çalışan pencereler, UAC ve Ctrl+Alt+Del uzaktan kontrol edilemez. Şifre ve kilit ekranı, isteğe bağlı şifre ekranı bölümüyle kontrol edilir.
 - Dosyaları kenarın ötesine sürükle-bırak, kaydırma ve fare hızı ayarları, klavye düzeni eşitleme henüz yok (bkz. [yol haritası](docs/PLAN.md)). Dosyalar kopyala-yapıştır ile aktarılır.
 - Tam ekran ve program koşulları yalnızca kontrol eden bilgisayardaki ön pencereye bakar; kontrol edilen bilgisayardaki tam ekran uygulama geçişi engellemez.
 - Fare takılı olmayan bir bilgisayarda Windows imleci çizmeyebilir; imleç çizme Aşama 3'te.
